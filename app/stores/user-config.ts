@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
-import { ClientApiError, createStockGroupRequest, deleteStockGroupRequest, fetchStockConfig, renameStockGroupRequest } from '~/services/api/stock-config'
+import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, transferStockMemberRequest } from '~/services/api/stock-config'
 import type { WatchGroup } from '~/types/market'
-import type { StockGroup, UserStockConfig } from '~~/shared/types/stock'
+import type { SecurityItem, StockGroup, UserStockConfig } from '~~/shared/types/stock'
 
 export const useUserConfigStore = defineStore('user-config', () => {
   const config = ref<UserStockConfig | null>(null)
@@ -166,6 +166,70 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
+  async function addMember(groupId: string, security: SecurityItem) {
+    await ensureConfigLoaded()
+    const snapshot = cloneUserStockConfig(config.value!)
+    const targetGroup = config.value!.groups.find(group => group.id === groupId)
+    if (!targetGroup) throw new Error('分组不存在')
+
+    saving.value = true
+    errorMessage.value = ''
+    try {
+      const result = await addStockMemberRequest(groupId, security, snapshot.configVersion)
+      config.value = result.config
+      return result.member
+    } catch (error) {
+      config.value = snapshot
+      if (isVersionConflict(error)) {
+        return await retryAddMemberAfterConflict(groupId, security)
+      }
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    } finally {
+      saving.value = false
+    }
+  }
+
+  async function deleteMember(groupId: string, securityId: string) {
+    await ensureConfigLoaded()
+    const snapshot = cloneUserStockConfig(config.value!)
+    const targetGroup = config.value!.groups.find(group => group.id === groupId)
+    if (!targetGroup) throw new Error('分组不存在')
+
+    saving.value = true
+    errorMessage.value = ''
+    targetGroup.members = targetGroup.members.filter(member => member.securityId !== securityId)
+    try {
+      const result = await deleteStockMemberRequest(groupId, securityId, snapshot.configVersion)
+      config.value = result.config
+      return result.member
+    } catch (error) {
+      config.value = snapshot
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    } finally {
+      saving.value = false
+    }
+  }
+
+  async function transferMember(groupId: string, securityId: string, targetGroupId: string, mode: 'MOVE' | 'COPY') {
+    await ensureConfigLoaded()
+    const snapshot = cloneUserStockConfig(config.value!)
+    saving.value = true
+    errorMessage.value = ''
+    try {
+      const result = await transferStockMemberRequest(groupId, securityId, targetGroupId, mode, snapshot.configVersion)
+      config.value = result.config
+      return result.member
+    } catch (error) {
+      config.value = snapshot
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    } finally {
+      saving.value = false
+    }
+  }
+
   async function retryRenameGroupAfterConflict(groupId: string, name: string) {
     await loadConfig()
 
@@ -215,6 +279,20 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
+  async function retryAddMemberAfterConflict(groupId: string, security: SecurityItem) {
+    await loadConfig()
+    if (!config.value) throw new Error('用户配置尚未加载')
+
+    try {
+      const result = await addStockMemberRequest(groupId, security, config.value.configVersion)
+      config.value = result.config
+      return result.member
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    }
+  }
+
   async function ensureConfigLoaded() {
     if (!config.value) {
       await loadConfig()
@@ -235,7 +313,10 @@ export const useUserConfigStore = defineStore('user-config', () => {
     loadConfig,
     createGroup,
     renameGroup,
-    deleteGroup
+    deleteGroup,
+    addMember,
+    deleteMember,
+    transferMember
   }
 })
 

@@ -1,10 +1,10 @@
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { DEFAULT_GROUP_ID, MAX_GROUPS_PER_USER, STOCK_CONFIG_SCHEMA_VERSION } from '~~/shared/constants/stock'
-import { createStockGroupPayloadSchema, updateStockGroupPayloadSchema, userStockConfigSchema } from '~~/shared/schemas/stock-config'
-import type { CreateStockGroupPayload, UpdateStockGroupPayload } from '~~/shared/schemas/stock-config'
-import type { StockGroup, UserStockConfig } from '~~/shared/types/stock'
+import { DEFAULT_GROUP_ID, MAX_GROUP_MEMBERS, MAX_GROUPS_PER_USER, MAX_SECURITIES_PER_USER, STOCK_CONFIG_SCHEMA_VERSION } from '~~/shared/constants/stock'
+import { addStockMemberPayloadSchema, createStockGroupPayloadSchema, transferStockMemberPayloadSchema, updateStockGroupPayloadSchema, userStockConfigSchema } from '~~/shared/schemas/stock-config'
+import type { AddStockMemberPayload, CreateStockGroupPayload, TransferStockMemberPayload, UpdateStockGroupPayload } from '~~/shared/schemas/stock-config'
+import type { StockGroup, StockGroupMember, UserStockConfig } from '~~/shared/types/stock'
 import { writeJsonAtomic } from '~~/server/utils/atomic-json'
 import { ApiResponseError } from '~~/server/utils/api-response'
 import { getUserWriteLock } from '~~/server/utils/user-write-lock'
@@ -126,6 +126,111 @@ export async function deleteStockGroup(userId: string, groupId: string, expected
       config: nextConfig,
       group
     }
+  })
+}
+
+export async function addStockGroupMember(userId: string, groupId: string, payload: AddStockMemberPayload, expectedVersion: number) {
+  const lock = getUserWriteLock(userId)
+
+  return lock.runExclusive(async () => {
+    const config = await getUserStockConfig(userId)
+    const input = addStockMemberPayloadSchema.parse(payload)
+    const group = findPersistedGroup(config, groupId)
+
+    assertConfigVersion(config, expectedVersion)
+    if (group.members.some(member => member.securityId === input.securityId)) {
+      return { config, group, member: group.members.find(member => member.securityId === input.securityId)! }
+    }
+
+    const uniqueSecurityIds = new Set(config.groups.flatMap(item => item.members.map(member => member.securityId)))
+    if (group.members.length >= MAX_GROUP_MEMBERS) {
+      throw new ApiResponseError(422, 'MEMBER_LIMIT_EXCEEDED', `该分组已达到 ${MAX_GROUP_MEMBERS} 只证券上限`)
+    }
+    if (!uniqueSecurityIds.has(input.securityId) && uniqueSecurityIds.size >= MAX_SECURITIES_PER_USER) {
+      throw new ApiResponseError(422, 'MEMBER_LIMIT_EXCEEDED', `用户证券数量已达到 ${MAX_SECURITIES_PER_USER} 只上限`)
+    }
+
+    const member: StockGroupMember = { ...input, addedAt: new Date().toISOString() }
+    const updatedGroup = { ...group, members: [...group.members, member] }
+    const nextConfig: UserStockConfig = {
+      ...config,
+      configVersion: config.configVersion + 1,
+      updatedAt: member.addedAt,
+      groups: config.groups.map(item => item.id === groupId ? updatedGroup : item)
+    }
+    await persistConfig(userId, nextConfig)
+    return { config: nextConfig, group: updatedGroup, member }
+  })
+}
+
+export async function deleteStockGroupMember(userId: string, groupId: string, securityId: string, expectedVersion: number) {
+  const lock = getUserWriteLock(userId)
+
+  return lock.runExclusive(async () => {
+    const config = await getUserStockConfig(userId)
+    const group = findPersistedGroup(config, groupId)
+    const member = group.members.find(item => item.securityId === securityId)
+
+    assertConfigVersion(config, expectedVersion)
+    if (!member) {
+      throw new ApiResponseError(404, 'SECURITY_NOT_FOUND', '分组内不存在该证券')
+    }
+
+    const now = new Date().toISOString()
+    const updatedGroup = {
+      ...group,
+      members: group.members.filter(item => item.securityId !== securityId)
+    }
+    const nextConfig: UserStockConfig = {
+      ...config,
+      configVersion: config.configVersion + 1,
+      updatedAt: now,
+      groups: config.groups.map(item => item.id === groupId ? updatedGroup : item)
+    }
+
+    await persistConfig(userId, nextConfig)
+    return { config: nextConfig, group: updatedGroup, member }
+  })
+}
+
+export async function transferStockGroupMember(userId: string, groupId: string, securityId: string, payload: TransferStockMemberPayload, expectedVersion: number) {
+  const lock = getUserWriteLock(userId)
+
+  return lock.runExclusive(async () => {
+    const config = await getUserStockConfig(userId)
+    const input = transferStockMemberPayloadSchema.parse(payload)
+    const sourceGroup = findPersistedGroup(config, groupId)
+    const targetGroup = findPersistedGroup(config, input.targetGroupId)
+    const member = sourceGroup.members.find(item => item.securityId === securityId)
+
+    assertConfigVersion(config, expectedVersion)
+    if (!member) throw new ApiResponseError(404, 'SECURITY_NOT_FOUND', '来源分组内不存在该证券')
+    if (sourceGroup.id === targetGroup.id) throw new ApiResponseError(422, 'INVALID_PAYLOAD', '目标分组不能与来源分组相同')
+
+    const targetHasMember = targetGroup.members.some(item => item.securityId === securityId)
+    if (input.mode === 'COPY' && targetHasMember) return { config, sourceGroup, targetGroup, member }
+    if (input.mode === 'MOVE' && targetHasMember) {
+      const now = new Date().toISOString()
+      const nextConfig: UserStockConfig = { ...config, configVersion: config.configVersion + 1, updatedAt: now, groups: config.groups.map(group => group.id === sourceGroup.id ? { ...group, members: group.members.filter(item => item.securityId !== securityId) } : group) }
+      await persistConfig(userId, nextConfig)
+      return { config: nextConfig, sourceGroup: nextConfig.groups.find(group => group.id === sourceGroup.id)!, targetGroup: nextConfig.groups.find(group => group.id === targetGroup.id)!, member }
+    }
+
+    if (targetGroup.members.length >= MAX_GROUP_MEMBERS) throw new ApiResponseError(422, 'MEMBER_LIMIT_EXCEEDED', `目标分组已达到 ${MAX_GROUP_MEMBERS} 只证券上限`)
+    const now = new Date().toISOString()
+    const updatedTarget = { ...targetGroup, members: [...targetGroup.members, member] }
+    const nextConfig: UserStockConfig = {
+      ...config,
+      configVersion: config.configVersion + 1,
+      updatedAt: now,
+      groups: config.groups.map((group) => {
+        if (group.id === targetGroup.id) return updatedTarget
+        if (input.mode === 'MOVE' && group.id === sourceGroup.id) return { ...group, members: group.members.filter(item => item.securityId !== securityId) }
+        return group
+      })
+    }
+    await persistConfig(userId, nextConfig)
+    return { config: nextConfig, sourceGroup: nextConfig.groups.find(group => group.id === sourceGroup.id)!, targetGroup: updatedTarget, member }
   })
 }
 

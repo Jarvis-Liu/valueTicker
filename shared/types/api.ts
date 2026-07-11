@@ -9,6 +9,7 @@ export type ApiErrorCode
     | 'MEMBER_LIMIT_EXCEEDED'
     | 'INVALID_PAYLOAD'
     | 'STORAGE_WRITE_FAILED'
+    | 'SECURITY_SEARCH_FAILED'
 
 export interface ApiError {
   code: ApiErrorCode

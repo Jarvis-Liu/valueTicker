@@ -4,12 +4,15 @@ import AlertRuleDrawer from '~/components/alerts/AlertRuleDrawer.vue'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import GroupFormDialog from '~/components/groups/GroupFormDialog.vue'
 import GroupSidebar from '~/components/groups/GroupSidebar.vue'
+import AddSecurityDialog from '~/components/securities/AddSecurityDialog.vue'
+import TransferSecurityDialog from '~/components/securities/TransferSecurityDialog.vue'
 import AppHeader from '~/components/layout/AppHeader.vue'
 import MarketInsightRail from '~/components/market/MarketInsightRail.vue'
 import TradingCalendarBar from '~/components/market/TradingCalendarBar.vue'
 import QuoteHealthCards from '~/components/quotes/QuoteHealthCards.vue'
 import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
 import type { AlertNotification, SecurityQuote, WatchGroup } from '~/types/market'
+import type { SecurityItem } from '~~/shared/types/stock'
 
 const userConfigStore = useUserConfigStore()
 
@@ -42,24 +45,53 @@ const groupFormOpen = ref(false)
 const groupFormMode = ref<'create' | 'rename'>('create')
 const activeGroup = ref<WatchGroup | null>(null)
 const deleteConfirmOpen = ref(false)
+const addSecurityOpen = ref(false)
+const removeSecurityConfirmOpen = ref(false)
+const activeSecurity = ref<SecurityQuote | null>(null)
+const transferDialogOpen = ref(false)
+const transferMode = ref<'MOVE' | 'COPY'>('MOVE')
 
 const groups = computed(() => userConfigStore.watchGroups)
 const selectedGroup = computed(() => groups.value.find(group => group.id === selectedGroupId.value) ?? groups.value[0]!)
+const addTargetGroup = computed(() => selectedGroupId.value === 'all'
+  ? groups.value.find(group => group.isDefault) ?? groups.value[0]
+  : selectedGroup.value)
+const addTargetSecurityIds = computed(() => {
+  const group = userConfigStore.stockGroups.find(group => group.id === addTargetGroup.value?.id)
+  return group?.members.map(member => member.securityId) ?? []
+})
 const editableGroupNames = computed(() => groups.value
   .filter(group => group.id !== 'all' && group.id !== activeGroup.value?.id)
   .map(group => group.name))
+const configuredQuotes = computed<SecurityQuote[]>(() => {
+  const persistedGroups = userConfigStore.stockGroups
+  const members = selectedGroupId.value === 'all'
+    ? Array.from(new Map(persistedGroups.flatMap(group => group.members).map(member => [member.securityId, member])).values())
+    : persistedGroups.find(group => group.id === selectedGroupId.value)?.members ?? []
+
+  return members.map((member) => {
+    const existingQuote = quotes.find(quote => quote.securityId === member.securityId)
+    const groupIds = persistedGroups
+      .filter(group => group.members.some(item => item.securityId === member.securityId))
+      .map(group => group.id)
+    const alertCount = userConfigStore.config?.alerts[member.securityId]?.rules.filter(rule => rule.enabled).length ?? 0
+
+    return existingQuote
+      ? { ...existingQuote, groupIds, alertCount }
+      : createPendingQuote(member, groupIds, alertCount)
+  })
+})
 const visibleQuotes = computed(() => {
   const keyword = search.value.trim().toLowerCase()
-  return quotes.filter((quote) => {
-    const inGroup = selectedGroupId.value === 'all' || quote.groupIds.includes(selectedGroupId.value)
+  return configuredQuotes.value.filter((quote) => {
     const matches = !keyword || quote.name.toLowerCase().includes(keyword) || quote.code.includes(keyword)
-    return inGroup && matches
+    return matches
   })
 })
 const lastUpdatedAt = computed(() => visibleQuotes.value[0]?.updatedAt ?? '待更新')
-const delayedQuoteCount = computed(() => quotes.filter(quote => quote.status === 'STALE').length)
-const enabledAlertCount = computed(() => quotes.reduce((total, quote) => total + quote.alertCount, 0))
-const coveredAlertSecurityCount = computed(() => quotes.filter(quote => quote.alertCount > 0).length)
+const delayedQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'STALE').length)
+const enabledAlertCount = computed(() => configuredQuotes.value.reduce((total, quote) => total + quote.alertCount, 0))
+const coveredAlertSecurityCount = computed(() => configuredQuotes.value.filter(quote => quote.alertCount > 0).length)
 
 onMounted(async () => {
   try {
@@ -123,6 +155,57 @@ function closeDeleteGroupConfirm() {
   deleteConfirmOpen.value = false
 }
 
+function openRemoveSecurityConfirm(quote: SecurityQuote) {
+  activeSecurity.value = quote
+  removeSecurityConfirmOpen.value = true
+}
+
+function closeRemoveSecurityConfirm() {
+  removeSecurityConfirmOpen.value = false
+  activeSecurity.value = null
+}
+
+function openTransferDialog(mode: 'MOVE' | 'COPY', quote: SecurityQuote) {
+  activeSecurity.value = quote
+  transferMode.value = mode
+  transferDialogOpen.value = true
+}
+
+function closeTransferDialog() {
+  transferDialogOpen.value = false
+  activeSecurity.value = null
+}
+
+const transferGroups = computed(() => groups.value.filter(group => group.id !== 'all' && group.id !== selectedGroupId.value))
+
+async function transferSecurity(targetGroupId: string) {
+  if (!activeSecurity.value || selectedGroupId.value === 'all') return
+  try {
+    await userConfigStore.transferMember(selectedGroupId.value, activeSecurity.value.securityId, targetGroupId, transferMode.value)
+    closeTransferDialog()
+    showSavedToast(transferMode.value === 'MOVE' ? '证券已移动' : '证券已复制')
+  } catch (error) {
+    console.error('[ValueTicker] 转移证券失败', error)
+    showSavedToast(userConfigStore.errorMessage || '证券转移失败')
+  }
+}
+
+function openAddSecurity() {
+  addSecurityOpen.value = true
+}
+
+async function addSecurity(security: SecurityItem) {
+  try {
+    if (!addTargetGroup.value) throw new Error('暂无可用分组')
+    await userConfigStore.addMember(addTargetGroup.value.id, security)
+    addSecurityOpen.value = false
+    showSavedToast('证券已添加')
+  } catch (error) {
+    console.error('[ValueTicker] 添加证券失败', error)
+    showSavedToast(userConfigStore.errorMessage || '证券添加失败')
+  }
+}
+
 async function submitGroupForm(name: string) {
   if (groupFormMode.value === 'rename') {
     await renameGroup(name)
@@ -178,6 +261,40 @@ async function deleteGroup() {
     showSavedToast(userConfigStore.errorMessage || '分组删除失败')
   }
 }
+
+async function removeSecurity() {
+  if (!activeSecurity.value || selectedGroupId.value === 'all') return
+
+  try {
+    await userConfigStore.deleteMember(selectedGroupId.value, activeSecurity.value.securityId)
+    closeRemoveSecurityConfirm()
+    showSavedToast('证券已从当前分组移除')
+  } catch (error) {
+    console.error('[ValueTicker] 移除证券失败', error)
+    showSavedToast(userConfigStore.errorMessage || '证券移除失败')
+  }
+}
+
+function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount: number): SecurityQuote {
+  return {
+    securityId: member.securityId,
+    name: member.name,
+    code: member.code,
+    boardLabel: member.boardLabel || undefined,
+    securityType: member.securityType === 'ETF' ? 'ETF' : 'STOCK',
+    price: Number.NaN,
+    change: Number.NaN,
+    changePercent: Number.NaN,
+    open: Number.NaN,
+    high: Number.NaN,
+    low: Number.NaN,
+    previousClose: Number.NaN,
+    updatedAt: '待更新',
+    status: 'STALE',
+    alertCount,
+    groupIds
+  }
+}
 </script>
 
 <template>
@@ -216,7 +333,12 @@ async function deleteGroup() {
               v-model:search="search"
               :title="selectedGroup.name"
               :quotes="visibleQuotes"
+              :can-remove="selectedGroupId !== 'all'"
               @alert="openAlert"
+              @add="openAddSecurity"
+              @remove="openRemoveSecurityConfirm"
+              @move="openTransferDialog('MOVE', $event)"
+              @copy="openTransferDialog('COPY', $event)"
             />
 
             <QuoteHealthCards
@@ -250,6 +372,14 @@ async function deleteGroup() {
       @submit="submitGroupForm"
     />
 
+    <AddSecurityDialog
+      :open="addSecurityOpen"
+      :group-name="addTargetGroup?.name ?? '默认分组'"
+      :existing-security-ids="addTargetSecurityIds"
+      @close="addSecurityOpen = false"
+      @select="addSecurity"
+    />
+
     <ConfirmDialog
       :open="deleteConfirmOpen"
       title="删除分组"
@@ -257,6 +387,24 @@ async function deleteGroup() {
       confirm-text="删除分组"
       @close="closeDeleteGroupConfirm"
       @confirm="deleteGroup"
+    />
+
+    <TransferSecurityDialog
+      :open="transferDialogOpen"
+      :mode="transferMode"
+      :source-group-name="selectedGroup.name"
+      :groups="transferGroups"
+      @close="closeTransferDialog"
+      @submit="transferSecurity"
+    />
+
+    <ConfirmDialog
+      :open="removeSecurityConfirmOpen"
+      title="移除证券"
+      :message="`确定要将「${activeSecurity?.name ?? ''}（${activeSecurity?.code ?? ''}）」从当前分组移除吗？`"
+      confirm-text="移除证券"
+      @close="closeRemoveSecurityConfirm"
+      @confirm="removeSecurity"
     />
 
     <Transition

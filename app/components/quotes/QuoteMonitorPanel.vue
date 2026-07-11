@@ -6,18 +6,34 @@ import {
   IconPlus,
   IconSearch
 } from '@tabler/icons-vue'
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import type { SecurityQuote } from '~/types/market'
 
 defineProps<{
   title: string
   quotes: SecurityQuote[]
+  canRemove: boolean
 }>()
 
 const search = defineModel<string>('search', { default: '' })
+const menuPositions = reactive<Record<string, { top: string, left: string }>>({})
 
 defineEmits<{
   alert: [quote: SecurityQuote]
+  add: []
+  remove: [quote: SecurityQuote]
+  move: [quote: SecurityQuote]
+  copy: [quote: SecurityQuote]
 }>()
+
+function positionMenu(securityId: string, event: MouseEvent) {
+  const button = event.currentTarget as HTMLElement
+  const rect = button.getBoundingClientRect()
+  menuPositions[securityId] = {
+    top: `${rect.bottom + 6}px`,
+    left: `${Math.max(8, rect.right - 144)}px`
+  }
+}
 
 function toneClass(value: number) {
   if (value > 0) return 'text-rose-600'
@@ -26,7 +42,12 @@ function toneClass(value: number) {
 }
 
 function signed(value: number, suffix = '') {
+  if (!Number.isFinite(value)) return '--'
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}${suffix}`
+}
+
+function formatted(value: number, precision = 2) {
+  return Number.isFinite(value) ? value.toFixed(precision) : '--'
 }
 </script>
 
@@ -68,6 +89,7 @@ function signed(value: number, suffix = '') {
         <button
           type="button"
           class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-[#123c34] px-3.5 text-xs font-semibold text-white transition hover:bg-[#0b2e28]"
+          @click="$emit('add')"
         >
           <IconPlus :size="17" />
           <span class="hidden sm:inline">添加证券</span>
@@ -138,7 +160,7 @@ function signed(value: number, suffix = '') {
                 class="text-sm font-semibold tabular-number"
                 :class="toneClass(quote.change)"
               >
-                {{ quote.price.toFixed(quote.securityType === 'ETF' ? 3 : 2) }}
+                {{ formatted(quote.price, quote.securityType === 'ETF' ? 3 : 2) }}
               </p>
               <p class="mt-0.5 text-[10px] text-slate-400 tabular-number">
                 {{ quote.updatedAt }}
@@ -159,16 +181,16 @@ function signed(value: number, suffix = '') {
               </p>
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
-              {{ quote.open.toFixed(2) }}
+              {{ formatted(quote.open) }}
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
-              {{ quote.high.toFixed(2) }}
+              {{ formatted(quote.high) }}
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
-              {{ quote.low.toFixed(2) }}
+              {{ formatted(quote.low) }}
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
-              {{ quote.previousClose.toFixed(2) }}
+              {{ formatted(quote.previousClose) }}
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5">
               <div
@@ -196,13 +218,70 @@ function signed(value: number, suffix = '') {
                     class="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-emerald-600 px-1 text-[9px] font-semibold text-white"
                   >{{ quote.alertCount }}</span>
                 </button>
-                <button
-                  type="button"
-                  class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                  title="更多操作"
+                <Menu
+                  as="div"
+                  class="relative"
                 >
-                  <IconDots :size="18" />
-                </button>
+                  <MenuButton
+                    class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                    title="更多操作"
+                    @click="positionMenu(quote.securityId, $event)"
+                  >
+                    <IconDots :size="18" />
+                  </MenuButton>
+                  <Teleport to="body">
+                    <MenuItems
+                      :style="menuPositions[quote.securityId]"
+                      class="fixed z-[70] w-36 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 text-left shadow-xl shadow-slate-900/10 focus:outline-none"
+                    >
+                      <MenuItem
+                        v-if="canRemove"
+                        v-slot="{ active }"
+                      >
+                        <button
+                          type="button"
+                          class="w-full px-3 py-2 text-xs font-medium text-rose-600"
+                          :class="active && 'bg-rose-50 text-rose-700'"
+                          @click="$emit('remove', quote)"
+                        >
+                          从当前分组移除
+                        </button>
+                      </MenuItem>
+                      <MenuItem
+                        v-if="canRemove"
+                        v-slot="{ active }"
+                      >
+                        <button
+                          type="button"
+                          class="w-full px-3 py-2 text-xs font-medium text-slate-600"
+                          :class="active && 'bg-slate-50 text-slate-900'"
+                          @click="$emit('move', quote)"
+                        >
+                          移动到其他分组
+                        </button>
+                      </MenuItem>
+                      <MenuItem
+                        v-if="canRemove"
+                        v-slot="{ active }"
+                      >
+                        <button
+                          type="button"
+                          class="w-full px-3 py-2 text-xs font-medium text-slate-600"
+                          :class="active && 'bg-slate-50 text-slate-900'"
+                          @click="$emit('copy', quote)"
+                        >
+                          复制到其他分组
+                        </button>
+                      </MenuItem>
+                      <p
+                        v-else
+                        class="px-3 py-2 text-[11px] text-slate-400"
+                      >
+                        请先选择具体分组
+                      </p>
+                    </MenuItems>
+                  </Teleport>
+                </Menu>
               </div>
             </td>
           </tr>

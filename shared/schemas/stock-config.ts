@@ -104,5 +104,13 @@ export const createStockGroupPayloadSchema = z.object({
 
 export const updateStockGroupPayloadSchema = createStockGroupPayloadSchema
 
+export const addStockMemberPayloadSchema = securityItemSchema
+export const transferStockMemberPayloadSchema = z.object({
+  targetGroupId: z.string().min(1),
+  mode: z.enum(['MOVE', 'COPY'])
+})
+
 export type CreateStockGroupPayload = z.infer<typeof createStockGroupPayloadSchema>
 export type UpdateStockGroupPayload = z.infer<typeof updateStockGroupPayloadSchema>
+export type AddStockMemberPayload = z.infer<typeof addStockMemberPayloadSchema>
+export type TransferStockMemberPayload = z.infer<typeof transferStockMemberPayloadSchema>
