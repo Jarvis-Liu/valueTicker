@@ -1,10 +1,29 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
-import { DEFAULT_GROUP_ID, MAX_GROUP_MEMBERS, MAX_GROUPS_PER_USER, MAX_SECURITIES_PER_USER, STOCK_CONFIG_SCHEMA_VERSION } from '~~/shared/constants/stock'
-import { addStockMemberPayloadSchema, createStockGroupPayloadSchema, transferStockMemberPayloadSchema, updateStockGroupPayloadSchema, userStockConfigSchema } from '~~/shared/schemas/stock-config'
-import type { AddStockMemberPayload, CreateStockGroupPayload, TransferStockMemberPayload, UpdateStockGroupPayload } from '~~/shared/schemas/stock-config'
-import type { StockGroup, StockGroupMember, UserStockConfig } from '~~/shared/types/stock'
+import {
+  DEFAULT_GROUP_ID,
+  MAX_GROUP_MEMBERS,
+  MAX_GROUPS_PER_USER,
+  MAX_SECURITIES_PER_USER,
+  STOCK_CONFIG_SCHEMA_VERSION
+} from '~~/shared/constants/stock'
+import {
+  addStockMemberPayloadSchema,
+  createStockGroupPayloadSchema,
+  transferStockMemberPayloadSchema,
+  updateStockAlertsPayloadSchema,
+  updateStockGroupPayloadSchema,
+  userStockConfigSchema
+} from '~~/shared/schemas/stock-config'
+import type {
+  AddStockMemberPayload,
+  CreateStockGroupPayload,
+  TransferStockMemberPayload,
+  UpdateStockAlertsPayload,
+  UpdateStockGroupPayload
+} from '~~/shared/schemas/stock-config'
+import type { SecurityAlerts, StockGroup, StockGroupMember, UserStockConfig } from '~~/shared/types/stock'
 import { writeJsonAtomic } from '~~/server/utils/atomic-json'
 import { ApiResponseError } from '~~/server/utils/api-response'
 import { getUserWriteLock } from '~~/server/utils/user-write-lock'
@@ -158,6 +177,7 @@ export async function addStockGroupMember(userId: string, groupId: string, paylo
       updatedAt: member.addedAt,
       groups: config.groups.map(item => item.id === groupId ? updatedGroup : item)
     }
+
     await persistConfig(userId, nextConfig)
     return { config: nextConfig, group: updatedGroup, member }
   })
@@ -211,12 +231,27 @@ export async function transferStockGroupMember(userId: string, groupId: string, 
     if (input.mode === 'COPY' && targetHasMember) return { config, sourceGroup, targetGroup, member }
     if (input.mode === 'MOVE' && targetHasMember) {
       const now = new Date().toISOString()
-      const nextConfig: UserStockConfig = { ...config, configVersion: config.configVersion + 1, updatedAt: now, groups: config.groups.map(group => group.id === sourceGroup.id ? { ...group, members: group.members.filter(item => item.securityId !== securityId) } : group) }
+      const nextConfig: UserStockConfig = {
+        ...config,
+        configVersion: config.configVersion + 1,
+        updatedAt: now,
+        groups: config.groups.map(group => group.id === sourceGroup.id
+          ? { ...group, members: group.members.filter(item => item.securityId !== securityId) }
+          : group)
+      }
       await persistConfig(userId, nextConfig)
-      return { config: nextConfig, sourceGroup: nextConfig.groups.find(group => group.id === sourceGroup.id)!, targetGroup: nextConfig.groups.find(group => group.id === targetGroup.id)!, member }
+      return {
+        config: nextConfig,
+        sourceGroup: nextConfig.groups.find(group => group.id === sourceGroup.id)!,
+        targetGroup: nextConfig.groups.find(group => group.id === targetGroup.id)!,
+        member
+      }
     }
 
-    if (targetGroup.members.length >= MAX_GROUP_MEMBERS) throw new ApiResponseError(422, 'MEMBER_LIMIT_EXCEEDED', `目标分组已达到 ${MAX_GROUP_MEMBERS} 只证券上限`)
+    if (targetGroup.members.length >= MAX_GROUP_MEMBERS) {
+      throw new ApiResponseError(422, 'MEMBER_LIMIT_EXCEEDED', `目标分组已达到 ${MAX_GROUP_MEMBERS} 只证券上限`)
+    }
+
     const now = new Date().toISOString()
     const updatedTarget = { ...targetGroup, members: [...targetGroup.members, member] }
     const nextConfig: UserStockConfig = {
@@ -229,8 +264,56 @@ export async function transferStockGroupMember(userId: string, groupId: string, 
         return group
       })
     }
+
     await persistConfig(userId, nextConfig)
-    return { config: nextConfig, sourceGroup: nextConfig.groups.find(group => group.id === sourceGroup.id)!, targetGroup: updatedTarget, member }
+    return {
+      config: nextConfig,
+      sourceGroup: nextConfig.groups.find(group => group.id === sourceGroup.id)!,
+      targetGroup: updatedTarget,
+      member
+    }
+  })
+}
+
+export async function updateStockAlerts(userId: string, securityId: string, payload: UpdateStockAlertsPayload, expectedVersion: number) {
+  const lock = getUserWriteLock(userId)
+
+  return lock.runExclusive(async () => {
+    const config = await getUserStockConfig(userId)
+    const input = updateStockAlertsPayloadSchema.parse(payload)
+
+    assertConfigVersion(config, expectedVersion)
+    assertSecurityExists(config, securityId)
+
+    const now = new Date().toISOString()
+    let nextAlerts = { ...config.alerts }
+    let alerts: SecurityAlerts | null = null
+
+    if (input.rules.length > 0) {
+      alerts = {
+        securityId,
+        rules: input.rules,
+        updatedAt: now
+      }
+      nextAlerts[securityId] = alerts
+    } else {
+      const { [securityId]: _removedAlert, ...remainingAlerts } = nextAlerts
+      nextAlerts = remainingAlerts
+    }
+
+    const nextConfig: UserStockConfig = {
+      ...config,
+      configVersion: config.configVersion + 1,
+      updatedAt: now,
+      alerts: nextAlerts
+    }
+
+    await persistConfig(userId, nextConfig)
+
+    return {
+      config: nextConfig,
+      alerts
+    }
   })
 }
 
@@ -326,6 +409,14 @@ function assertUniqueGroupName(config: UserStockConfig, name: string, currentGro
 
   if (duplicated) {
     throw new ApiResponseError(409, 'DUPLICATE_GROUP_NAME', '分组名称已存在，请换一个名称')
+  }
+}
+
+function assertSecurityExists(config: UserStockConfig, securityId: string) {
+  const exists = config.groups.some(group => group.members.some(member => member.securityId === securityId))
+
+  if (!exists) {
+    throw new ApiResponseError(404, 'SECURITY_NOT_FOUND', '证券不存在')
   }
 }
 

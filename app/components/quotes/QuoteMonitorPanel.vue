@@ -239,8 +239,10 @@ function pad(value: number) {
                   <IconBellRinging :size="17" />
                   <span
                     v-if="quote.alertCount"
-                    class="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-emerald-600 px-1 text-[9px] font-semibold text-white"
-                  >{{ quote.alertCount }}</span>
+                    class="absolute -right-0.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.18)]"
+                  >
+                    <span class="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  </span>
                 </button>
                 <Menu
                   as="div"

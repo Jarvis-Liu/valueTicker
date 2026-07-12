@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
-import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, transferStockMemberRequest } from '~/services/api/stock-config'
+import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, transferStockMemberRequest, updateStockAlertsRequest } from '~/services/api/stock-config'
 import type { WatchGroup } from '~/types/market'
-import type { SecurityItem, StockGroup, UserStockConfig } from '~~/shared/types/stock'
+import type { AlertRule, SecurityItem, StockGroup, UserStockConfig } from '~~/shared/types/stock'
 
 export const useUserConfigStore = defineStore('user-config', () => {
   const config = ref<UserStockConfig | null>(null)
@@ -230,6 +230,31 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
+  async function saveSecurityAlerts(securityId: string, rules: AlertRule[]) {
+    await ensureConfigLoaded()
+    const snapshot = cloneUserStockConfig(config.value!)
+
+    saving.value = true
+    errorMessage.value = ''
+
+    try {
+      const result = await updateStockAlertsRequest(securityId, rules, snapshot.configVersion)
+      config.value = result.config
+      return result.alerts
+    } catch (error) {
+      config.value = snapshot
+
+      if (isVersionConflict(error)) {
+        return await retrySaveSecurityAlertsAfterConflict(securityId, rules)
+      }
+
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    } finally {
+      saving.value = false
+    }
+  }
+
   async function retryRenameGroupAfterConflict(groupId: string, name: string) {
     await loadConfig()
 
@@ -293,6 +318,20 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
+  async function retrySaveSecurityAlertsAfterConflict(securityId: string, rules: AlertRule[]) {
+    await loadConfig()
+    if (!config.value) throw new Error('鐢ㄦ埛閰嶇疆灏氭湭鍔犺浇')
+
+    try {
+      const result = await updateStockAlertsRequest(securityId, rules, config.value.configVersion)
+      config.value = result.config
+      return result.alerts
+    } catch (error) {
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    }
+  }
+
   async function ensureConfigLoaded() {
     if (!config.value) {
       await loadConfig()
@@ -316,7 +355,8 @@ export const useUserConfigStore = defineStore('user-config', () => {
     deleteGroup,
     addMember,
     deleteMember,
-    transferMember
+    transferMember,
+    saveSecurityAlerts
   }
 })
 

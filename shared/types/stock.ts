@@ -37,8 +37,6 @@ export interface AlertRule {
   enabled: boolean
   value: number
   note: string
-  cooldownSeconds: number
-  maxTriggersPerDay: number
 }
 
 export interface SecurityAlerts {

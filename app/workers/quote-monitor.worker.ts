@@ -1,12 +1,15 @@
 import { fetchEastmoneyQuotes } from '../services/quotes/eastmoney.adapter'
 import { fetchTencentQuotes } from '../services/quotes/tencent.adapter'
+import { evaluateQuoteAlerts } from '../utils/alert-engine'
 import type { QuoteProvider, QuoteWorkerRequest, QuoteWorkerResponse } from '../services/quotes/types'
-import type { SecurityItem } from '~~/shared/types/stock'
+import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
 
 let securities: SecurityItem[] = []
+let alertConfigs: Record<string, SecurityAlerts> = {}
 let timer: ReturnType<typeof setTimeout> | undefined
 let running = false
 let paused = false
+let suppressNextAlerts = false
 let provider: QuoteProvider = 'EASTMONEY'
 
 self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
@@ -14,6 +17,8 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
   if (message.type === 'START' || message.type === 'UPDATE_SECURITIES') {
     securities = message.securities
     if (message.provider) provider = message.provider
+    if (message.type === 'START' && message.alerts) alertConfigs = message.alerts
+    suppressNextAlerts = true
     if (message.type === 'START') {
       running = true
       paused = false
@@ -25,8 +30,11 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
     schedule()
   } else if (message.type === 'UPDATE_PROVIDER') {
     provider = message.provider
+    suppressNextAlerts = true
     await refresh(true)
     if (running && !paused) schedule()
+  } else if (message.type === 'UPDATE_ALERTS') {
+    alertConfigs = message.alerts
   } else if (message.type === 'STOP') {
     running = false
     clearTimer()
@@ -37,6 +45,7 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
     post({ type: 'STATUS', status: 'PAUSED' })
   } else if (message.type === 'RESUME') {
     paused = false
+    suppressNextAlerts = true
     post({ type: 'STATUS', status: 'RUNNING' })
     await refresh(true)
     schedule()
@@ -51,6 +60,15 @@ async function refresh(force: boolean) {
   try {
     const quotes = await fetchQuotes(securities)
     post({ type: 'QUOTE_SNAPSHOT', quotes, securityIds: securities.map(item => item.securityId) })
+    if (suppressNextAlerts) {
+      suppressNextAlerts = false
+    } else {
+      const securitiesById = new Map(securities.map(security => [security.securityId, security]))
+      for (const quote of quotes) {
+        const events = evaluateQuoteAlerts(quote, securitiesById.get(quote.securityId), alertConfigs[quote.securityId])
+        for (const event of events) post({ type: 'ALERT_TRIGGERED', event })
+      }
+    }
     post({ type: 'STATUS', status: quotes.length ? 'RUNNING' : 'STALE' })
   } catch (error) {
     post({ type: 'ERROR', message: error instanceof Error ? error.message : '行情请求失败' })

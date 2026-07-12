@@ -1,8 +1,9 @@
-import type { SecurityItem } from '~~/shared/types/stock'
+import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
 import type { QuoteProvider, QuoteWorkerRequest, QuoteWorkerResponse } from '~/services/quotes/types'
 
 export function useQuoteMonitor() {
   const marketStore = useMarketStore()
+  const browserNotifications = useBrowserNotifications()
   const worker = shallowRef<Worker | null>(null)
 
   function ensureWorker() {
@@ -11,6 +12,10 @@ export function useQuoteMonitor() {
       worker.value.onmessage = (event: MessageEvent<QuoteWorkerResponse>) => {
         const message = event.data
         if (message.type === 'QUOTE_SNAPSHOT') marketStore.updateQuotes(message.quotes, message.securityIds)
+        if (message.type === 'ALERT_TRIGGERED') {
+          marketStore.addAlertEvent(message.event)
+          browserNotifications.notifyAlert(message.event)
+        }
         if (message.type === 'STATUS') marketStore.setStatus(message.status, message.message)
         if (message.type === 'ERROR') marketStore.setStatus('ERROR', message.message)
       }
@@ -35,11 +40,14 @@ export function useQuoteMonitor() {
     }
   }
 
-  function start(securities: SecurityItem[], provider: QuoteProvider) {
-    send({ type: 'START', securities, provider })
+  function start(securities: SecurityItem[], provider: QuoteProvider, alerts?: Record<string, SecurityAlerts>) {
+    send({ type: 'START', securities, provider, alerts })
   }
   function updateSecurities(securities: SecurityItem[], provider?: QuoteProvider) {
     send({ type: 'UPDATE_SECURITIES', securities, provider })
+  }
+  function updateAlerts(alerts: Record<string, SecurityAlerts>) {
+    send({ type: 'UPDATE_ALERTS', alerts })
   }
   function updateProvider(provider: QuoteProvider) {
     send({ type: 'UPDATE_PROVIDER', provider })
@@ -60,7 +68,7 @@ export function useQuoteMonitor() {
     worker.value = null
   }
 
-  return { start, updateSecurities, updateProvider, pause, resume, forceRefresh, stop }
+  return { start, updateSecurities, updateAlerts, updateProvider, pause, resume, forceRefresh, stop }
 }
 
 function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
@@ -68,7 +76,8 @@ function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
     return {
       type: 'START',
       securities: message.securities.map(toPlainSecurity),
-      provider: message.provider
+      provider: message.provider,
+      alerts: cloneAlerts(message.alerts)
     }
   }
 
@@ -80,7 +89,27 @@ function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
     }
   }
 
+  if (message.type === 'UPDATE_ALERTS') {
+    return {
+      type: 'UPDATE_ALERTS',
+      alerts: cloneAlerts(message.alerts) ?? {}
+    }
+  }
+
   return message
+}
+
+function cloneAlerts(alerts?: Record<string, SecurityAlerts>) {
+  if (!alerts) return undefined
+
+  return Object.fromEntries(Object.entries(alerts).map(([securityId, config]) => [
+    securityId,
+    {
+      securityId: config.securityId,
+      updatedAt: config.updatedAt,
+      rules: config.rules.map(rule => ({ ...rule }))
+    }
+  ]))
 }
 
 function toPlainSecurity(security: SecurityItem): SecurityItem {

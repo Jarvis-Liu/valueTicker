@@ -41,9 +41,7 @@ export const alertRuleSchema = z.object({
   type: z.enum(['CHANGE_UPPER', 'CHANGE_LOWER', 'PRICE_UPPER', 'PRICE_LOWER']),
   enabled: z.boolean(),
   value: z.number().positive(),
-  note: z.string().max(50),
-  cooldownSeconds: z.number().int().positive(),
-  maxTriggersPerDay: z.number().int().positive()
+  note: z.string().max(50)
 })
 
 export const securityAlertsSchema = z.object({
@@ -109,8 +107,12 @@ export const transferStockMemberPayloadSchema = z.object({
   targetGroupId: z.string().min(1),
   mode: z.enum(['MOVE', 'COPY'])
 })
+export const updateStockAlertsPayloadSchema = z.object({
+  rules: z.array(alertRuleSchema).max(8)
+})
 
 export type CreateStockGroupPayload = z.infer<typeof createStockGroupPayloadSchema>
 export type UpdateStockGroupPayload = z.infer<typeof updateStockGroupPayloadSchema>
 export type AddStockMemberPayload = z.infer<typeof addStockMemberPayloadSchema>
 export type TransferStockMemberPayload = z.infer<typeof transferStockMemberPayloadSchema>
+export type UpdateStockAlertsPayload = z.infer<typeof updateStockAlertsPayloadSchema>

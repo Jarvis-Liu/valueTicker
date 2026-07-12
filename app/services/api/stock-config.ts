@@ -1,5 +1,5 @@
 import type { ApiError, ApiResponse } from '~~/shared/types/api'
-import type { SecurityItem, StockGroup, UserStockConfig } from '~~/shared/types/stock'
+import type { AlertRule, SecurityAlerts, SecurityItem, StockGroup, UserStockConfig } from '~~/shared/types/stock'
 
 export class ClientApiError extends Error {
   /** 创建包含服务端错误码的客户端 API 异常。 */
@@ -17,6 +17,11 @@ export interface AddStockMemberResult {
   config: UserStockConfig
   group: StockGroup
   member: SecurityItem & { addedAt: string }
+}
+
+export interface UpdateStockAlertsResult {
+  config: UserStockConfig
+  alerts: SecurityAlerts | null
 }
 
 export interface SecuritySearchResult {
@@ -92,6 +97,15 @@ export async function transferStockMemberRequest(groupId: string, securityId: st
     method: 'POST',
     headers: { 'If-Match': String(configVersion) },
     body: { targetGroupId, mode }
+  })
+}
+
+/** 保存或清空单只证券的提醒规则配置。 */
+export async function updateStockAlertsRequest(securityId: string, rules: AlertRule[], configVersion: number) {
+  return requestApi<UpdateStockAlertsResult>(`/api/stock-alerts/${encodeURIComponent(securityId)}`, {
+    method: 'PUT',
+    headers: { 'If-Match': String(configVersion) },
+    body: { rules }
   })
 }
 

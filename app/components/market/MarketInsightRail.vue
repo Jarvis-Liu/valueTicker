@@ -92,7 +92,7 @@ const indices = [
               提醒动态
             </h2>
             <p class="mt-0.5 text-[10px] text-slate-400">
-              今日已触发 3 次
+              今日已触发 {{ notifications.length }} 次
             </p>
           </div>
         </div>
@@ -128,6 +128,12 @@ const indices = [
             </div>
           </div>
         </article>
+        <div
+          v-if="notifications.length === 0"
+          class="py-8 text-center text-xs text-slate-400"
+        >
+          暂无触发提醒
+        </div>
       </div>
     </section>
   </aside>

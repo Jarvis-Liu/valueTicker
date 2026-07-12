@@ -11,13 +11,14 @@ import MarketInsightRail from '~/components/market/MarketInsightRail.vue'
 import TradingCalendarBar from '~/components/market/TradingCalendarBar.vue'
 import QuoteHealthCards from '~/components/quotes/QuoteHealthCards.vue'
 import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
-import type { AlertNotification, SecurityQuote, WatchGroup } from '~/types/market'
+import type { SecurityQuote, WatchGroup } from '~/types/market'
 import type { QuoteProvider } from '~/services/quotes/types'
-import type { SecurityItem } from '~~/shared/types/stock'
+import type { AlertRule, SecurityItem } from '~~/shared/types/stock'
 
 const userConfigStore = useUserConfigStore()
 const marketStore = useMarketStore()
 const quoteMonitor = useQuoteMonitor()
+const browserNotifications = useBrowserNotifications()
 let monitorStarted = false
 // 页面直连测试已确认可用，恢复 Worker 行情轮询。
 const enableQuoteWorker = true
@@ -31,12 +32,6 @@ const quotes: SecurityQuote[] = [
   { securityId: 'SZSE:002594', name: '比亚迪', code: '002594', securityType: 'STOCK', price: 318.72, change: 1.44, changePercent: 0.45, open: 317.50, high: 320.16, low: 315.60, previousClose: 317.28, updatedAt: '10:26:33', status: 'STALE', alertCount: 1, groupIds: ['tech'] },
   { securityId: 'SZSE:159915', name: '创业板 ETF', code: '159915', securityType: 'ETF', price: 2.184, change: -0.006, changePercent: -0.27, open: 2.192, high: 2.201, low: 2.178, previousClose: 2.190, updatedAt: '10:26:35', status: 'TRADING', alertCount: 0, groupIds: ['etf'] },
   { securityId: 'SSE:510300', name: '沪深300 ETF', code: '510300', securityType: 'ETF', price: 4.126, change: 0.018, changePercent: 0.44, open: 4.110, high: 4.132, low: 4.105, previousClose: 4.108, updatedAt: '10:26:35', status: 'TRADING', alertCount: 1, groupIds: ['etf'] }
-]
-
-const notifications: AlertNotification[] = [
-  { id: 'n1', title: '中芯国际涨幅超过 2%', detail: '当前涨幅 2.42%，目标值 2.00%', time: '10:23', tone: 'up' },
-  { id: 'n2', title: '贵州茅台价格涨至 1490', detail: '当前价格 1496.80，已触发提醒', time: '10:08', tone: 'up' },
-  { id: 'n3', title: '五粮液价格跌至 129', detail: '当前价格 128.64，目标值 129.00', time: '09:54', tone: 'down' }
 ]
 
 const selectedGroupId = ref('all')
@@ -100,13 +95,15 @@ const lastUpdatedAt = computed(() => visibleQuotes.value[0]?.updatedAt ?? '待�
 const delayedQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'STALE').length)
 const enabledAlertCount = computed(() => configuredQuotes.value.reduce((total, quote) => total + quote.alertCount, 0))
 const coveredAlertSecurityCount = computed(() => configuredQuotes.value.filter(quote => quote.alertCount > 0).length)
+const activeAlertRules = computed(() => activeQuote.value ? userConfigStore.config?.alerts[activeQuote.value.securityId]?.rules ?? [] : [])
+const activeAlerts = computed(() => userConfigStore.config?.alerts ?? {})
 
 onMounted(async () => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await userConfigStore.loadConfig()
       if (enableQuoteWorker) {
-        quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value)
+        quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value, activeAlerts.value)
         monitorStarted = true
       }
       return
@@ -129,6 +126,11 @@ const subscriptionSecurities = computed<SecurityItem[]>(() => {
 watch(subscriptionSecurities, (nextSecurities) => {
   if (!monitorStarted) return
   quoteMonitor.updateSecurities(nextSecurities, quoteProvider.value)
+}, { deep: true })
+
+watch(activeAlerts, (nextAlerts) => {
+  if (!monitorStarted) return
+  quoteMonitor.updateAlerts(nextAlerts)
 }, { deep: true })
 
 onUnmounted(() => quoteMonitor.stop())
@@ -185,6 +187,23 @@ function showSavedToast(message = '操作已完成') {
   window.setTimeout(() => {
     savedToast.value = false
   }, 2200)
+}
+
+async function saveAlertRules(rules: AlertRule[]) {
+  if (!activeQuote.value) return
+
+  try {
+    if (rules.some(rule => rule.enabled)) {
+      await browserNotifications.requestPermission()
+    }
+    await userConfigStore.saveSecurityAlerts(activeQuote.value.securityId, rules)
+    quoteMonitor.updateAlerts(activeAlerts.value)
+    alertOpen.value = false
+    showSavedToast(rules.length > 0 ? '提醒规则已保存' : '提醒规则已清空')
+  } catch (error) {
+    console.error('[ValueTicker] 保存提醒规则失败', error)
+    showSavedToast(userConfigStore.errorMessage || '提醒规则保存失败')
+  }
 }
 
 function openGroupForm() {
@@ -410,7 +429,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
           </div>
 
           <div class="lg:col-start-2 xl:col-start-auto">
-            <MarketInsightRail :notifications="notifications" />
+            <MarketInsightRail :notifications="marketStore.alertNotifications" />
           </div>
         </div>
       </div>
@@ -419,8 +438,10 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
     <AlertRuleDrawer
       :open="alertOpen"
       :quote="activeQuote"
+      :rules="activeAlertRules"
+      :saving="userConfigStore.saving"
       @close="alertOpen = false"
-      @save="showSavedToast"
+      @save="saveAlertRules"
     />
 
     <GroupFormDialog
