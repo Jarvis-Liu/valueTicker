@@ -49,6 +49,30 @@ function signed(value: number, suffix = '') {
 function formatted(value: number, precision = 2) {
   return Number.isFinite(value) ? value.toFixed(precision) : '--'
 }
+
+function formatQuoteTime(value: string) {
+  const compactDateTime = value.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/)
+  if (compactDateTime) return `${compactDateTime[1]}-${compactDateTime[2]}-${compactDateTime[3]} ${compactDateTime[4]}:${compactDateTime[5]}:${compactDateTime[6]}`
+
+  const parsedDate = new Date(value)
+  if (Number.isFinite(parsedDate.getTime())) return formatLocalDateTime(parsedDate)
+
+  return value || '--'
+}
+
+function formatLocalDateTime(value: Date) {
+  const year = value.getFullYear()
+  const month = pad(value.getMonth() + 1)
+  const day = pad(value.getDate())
+  const hour = pad(value.getHours())
+  const minute = pad(value.getMinutes())
+  const second = pad(value.getSeconds())
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
+}
+
+function pad(value: number) {
+  return String(value).padStart(2, '0')
+}
 </script>
 
 <template>
@@ -163,7 +187,7 @@ function formatted(value: number, precision = 2) {
                 {{ formatted(quote.price, quote.securityType === 'ETF' ? 3 : 2) }}
               </p>
               <p class="mt-0.5 text-[10px] text-slate-400 tabular-number">
-                {{ quote.updatedAt }}
+                {{ formatQuoteTime(quote.updatedAt) }}
               </p>
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5 text-right">

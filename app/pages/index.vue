@@ -12,9 +12,15 @@ import TradingCalendarBar from '~/components/market/TradingCalendarBar.vue'
 import QuoteHealthCards from '~/components/quotes/QuoteHealthCards.vue'
 import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
 import type { AlertNotification, SecurityQuote, WatchGroup } from '~/types/market'
+import type { QuoteProvider } from '~/services/quotes/types'
 import type { SecurityItem } from '~~/shared/types/stock'
 
 const userConfigStore = useUserConfigStore()
+const marketStore = useMarketStore()
+const quoteMonitor = useQuoteMonitor()
+let monitorStarted = false
+// 页面直连测试已确认可用，恢复 Worker 行情轮询。
+const enableQuoteWorker = true
 
 const quotes: SecurityQuote[] = [
   { securityId: 'SSE:600519', name: '贵州茅台', code: '600519', securityType: 'STOCK', price: 1496.80, change: 18.32, changePercent: 1.24, open: 1481.00, high: 1502.88, low: 1478.20, previousClose: 1478.48, updatedAt: '10:26:35', status: 'TRADING', alertCount: 2, groupIds: ['default', 'core'] },
@@ -34,6 +40,7 @@ const notifications: AlertNotification[] = [
 ]
 
 const selectedGroupId = ref('all')
+const quoteProvider = ref<QuoteProvider>('EASTMONEY')
 const search = ref('')
 const paused = ref(false)
 const refreshing = ref(false)
@@ -76,9 +83,10 @@ const configuredQuotes = computed<SecurityQuote[]>(() => {
       .map(group => group.id)
     const alertCount = userConfigStore.config?.alerts[member.securityId]?.rules.filter(rule => rule.enabled).length ?? 0
 
-    return existingQuote
-      ? { ...existingQuote, groupIds, alertCount }
-      : createPendingQuote(member, groupIds, alertCount)
+    const pendingQuote = createPendingQuote(member, groupIds, alertCount)
+    const liveQuote = marketStore.quotes[member.securityId]
+    if (liveQuote) return { ...pendingQuote, ...liveQuote, status: liveQuote.status === 'ERROR' ? 'STALE' : liveQuote.status, name: member.name, code: member.code, securityType: member.securityType === 'ETF' ? 'ETF' : 'STOCK', boardLabel: member.boardLabel || undefined, groupIds, alertCount }
+    return existingQuote ? { ...existingQuote, groupIds, alertCount } : pendingQuote
   })
 })
 const visibleQuotes = computed(() => {
@@ -94,12 +102,36 @@ const enabledAlertCount = computed(() => configuredQuotes.value.reduce((total, q
 const coveredAlertSecurityCount = computed(() => configuredQuotes.value.filter(quote => quote.alertCount > 0).length)
 
 onMounted(async () => {
-  try {
-    await userConfigStore.loadConfig()
-  } catch {
-    showSavedToast(userConfigStore.errorMessage || '配置加载失败')
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await userConfigStore.loadConfig()
+      if (enableQuoteWorker) {
+        quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value)
+        monitorStarted = true
+      }
+      return
+    } catch {
+      if (attempt < 2) {
+        await new Promise(resolve => window.setTimeout(resolve, 500 * (attempt + 1)))
+        continue
+      }
+
+      marketStore.setStatus('ERROR', userConfigStore.errorMessage || '配置加载失败')
+      showSavedToast(userConfigStore.errorMessage || '配置加载失败')
+    }
   }
 })
+
+const subscriptionSecurities = computed<SecurityItem[]>(() => {
+  return getSubscriptionSecurities(selectedGroupId.value)
+})
+
+watch(subscriptionSecurities, (nextSecurities) => {
+  if (!monitorStarted) return
+  quoteMonitor.updateSecurities(nextSecurities, quoteProvider.value)
+}, { deep: true })
+
+onUnmounted(() => quoteMonitor.stop())
 
 watch(groups, (nextGroups) => {
   const selectedGroupExists = nextGroups.some(group => group.id === selectedGroupId.value)
@@ -109,6 +141,24 @@ watch(groups, (nextGroups) => {
   }
 })
 
+function selectGroup(groupId: string) {
+  selectedGroupId.value = groupId
+}
+
+function changeQuoteProvider(provider: QuoteProvider) {
+  if (quoteProvider.value === provider) return
+  quoteProvider.value = provider
+  marketStore.setStatus('RUNNING')
+  if (monitorStarted) quoteMonitor.updateProvider(provider)
+}
+
+function getSubscriptionSecurities(groupId: string) {
+  const members = groupId === 'all'
+    ? userConfigStore.stockGroups.flatMap(group => group.members)
+    : userConfigStore.stockGroups.find(group => group.id === groupId)?.members ?? []
+  return Array.from(new Map(members.map(member => [member.securityId, member])).values())
+}
+
 function openAlert(quote: SecurityQuote) {
   activeQuote.value = quote
   alertOpen.value = true
@@ -117,9 +167,16 @@ function openAlert(quote: SecurityQuote) {
 function refresh() {
   if (refreshing.value) return
   refreshing.value = true
+  quoteMonitor.forceRefresh()
   window.setTimeout(() => {
     refreshing.value = false
   }, 700)
+}
+
+function toggleMonitor() {
+  paused.value = !paused.value
+  if (paused.value) quoteMonitor.pause()
+  else quoteMonitor.resume()
 }
 
 function showSavedToast(message = '操作已完成') {
@@ -302,8 +359,11 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
     <div class="shrink-0">
       <AppHeader
         :paused="paused"
+        :provider="quoteProvider"
         :refreshing="refreshing"
-        @toggle="paused = !paused"
+        :status="marketStore.status"
+        @provider-change="changeQuoteProvider"
+        @toggle="toggleMonitor"
         @refresh="refresh"
       />
       <div class="border-b border-slate-200/70 bg-[#f3f6f4]/95 shadow-sm backdrop-blur">
@@ -322,7 +382,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
           <GroupSidebar
             :groups="groups"
             :selected-id="selectedGroupId"
-            @select="selectedGroupId = $event"
+            @select="selectGroup"
             @add="openGroupForm"
             @rename="openRenameGroupForm"
             @delete="openDeleteGroupConfirm"

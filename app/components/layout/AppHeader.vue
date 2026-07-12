@@ -7,16 +7,33 @@ import {
   IconPlayerPlay,
   IconRefresh
 } from '@tabler/icons-vue'
+import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/vue'
+import type { MonitorStatus, QuoteProvider } from '~/services/quotes/types'
 
-defineProps<{
+const props = defineProps<{
   paused: boolean
   refreshing: boolean
+  status: MonitorStatus
+  provider: QuoteProvider
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   toggle: []
   refresh: []
+  providerChange: [provider: QuoteProvider]
 }>()
+
+const providerOptions: Array<{ label: string, value: QuoteProvider }> = [
+  { label: '东财行情', value: 'EASTMONEY' },
+  { label: '腾讯行情', value: 'TENCENT' }
+]
+const selectedProviderLabel = computed(() => {
+  return providerOptions.find(option => option.value === props.provider)?.label ?? '行情源'
+})
+
+function changeProvider(provider: QuoteProvider) {
+  emit('providerChange', provider)
+}
 </script>
 
 <template>
@@ -50,10 +67,10 @@ defineEmits<{
           />
           <div>
             <p class="text-xs font-medium">
-              {{ paused ? '监测已暂停' : '实时监测中' }}
+              {{ paused ? '监测已暂停' : status === 'ERROR' ? '行情请求异常' : status === 'STALE' ? '行情数据延迟' : status === 'RUNNING' ? '实时监测中' : '监测未启动' }}
             </p>
             <p class="mt-0.5 text-[11px] text-slate-400">
-              {{ paused ? '行情快照保持不变' : '前台 · 5 秒轮询' }}
+              {{ status === 'ERROR' ? '请检查 Worker 或行情源' : paused ? '行情快照保持不变' : status === 'RUNNING' ? '前台 · 5 秒轮询' : '等待行情订阅' }}
             </p>
           </div>
         </div>
@@ -62,13 +79,55 @@ defineEmits<{
           <p class="text-[11px] text-slate-400">
             当前数据源
           </p>
-          <p class="mt-0.5 flex items-center gap-1 text-xs font-medium">
-            腾讯行情
-            <IconChevronDown
-              :size="14"
-              class="text-slate-500"
-            />
-          </p>
+          <Listbox
+            :model-value="provider"
+            @update:model-value="changeProvider"
+          >
+            <div class="relative mt-1">
+              <ListboxButton class="group relative flex h-8 w-[128px] items-center overflow-hidden rounded-xl border border-white/10 bg-white/[0.06] pl-6 pr-8 text-left text-xs font-semibold text-white shadow-inner shadow-white/5 outline-none transition hover:border-emerald-300/40 hover:bg-white/[0.09] focus-visible:border-emerald-300/60 focus-visible:ring-2 focus-visible:ring-emerald-300/15">
+                <span class="pointer-events-none absolute left-2.5 h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.8)]" />
+                <span class="block truncate">{{ selectedProviderLabel }}</span>
+                <span class="pointer-events-none absolute right-0 top-0 h-full w-7 bg-gradient-to-l from-[#0b2420] via-[#0b2420]/90 to-transparent" />
+                <IconChevronDown
+                  :size="14"
+                  class="pointer-events-none absolute right-2 text-emerald-100/70 transition group-hover:text-emerald-100"
+                />
+              </ListboxButton>
+
+              <Transition
+                enter-active-class="transition duration-150 ease-out"
+                enter-from-class="-translate-y-1 opacity-0"
+                enter-to-class="translate-y-0 opacity-100"
+                leave-active-class="transition duration-100 ease-in"
+                leave-from-class="translate-y-0 opacity-100"
+                leave-to-class="-translate-y-1 opacity-0"
+              >
+                <ListboxOptions class="absolute left-0 top-[calc(100%+8px)] z-[80] w-[148px] overflow-hidden rounded-xl border border-emerald-300/15 bg-[#102f2a] p-1 shadow-2xl shadow-slate-950/30 outline-none ring-1 ring-white/5">
+                  <ListboxOption
+                    v-for="option in providerOptions"
+                    :key="option.value"
+                    v-slot="{ active, selected }"
+                    :value="option.value"
+                    as="template"
+                  >
+                    <li
+                      class="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold transition"
+                      :class="[
+                        active ? 'bg-emerald-300/12 text-white' : 'text-emerald-50/80',
+                        selected && 'text-emerald-200'
+                      ]"
+                    >
+                      <span
+                        class="h-1.5 w-1.5 rounded-full"
+                        :class="selected ? 'bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.8)]' : 'bg-white/20'"
+                      />
+                      <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+                    </li>
+                  </ListboxOption>
+                </ListboxOptions>
+              </Transition>
+            </div>
+          </Listbox>
         </div>
         <div>
           <p class="text-[11px] text-slate-400">
