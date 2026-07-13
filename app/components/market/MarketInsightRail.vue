@@ -38,7 +38,7 @@ const indices = [
         </div>
         <span class="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700">交易中</span>
       </div>
-      <div class="divide-y divide-slate-100 px-4">
+      <div class="max-h-[480px] divide-y divide-slate-100 overflow-y-auto px-4">
         <div
           v-for="item in indices"
           :key="item.name"

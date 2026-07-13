@@ -3,12 +3,17 @@ import {
   Dialog,
   DialogPanel,
   DialogTitle,
+  Listbox,
+  ListboxButton,
+  ListboxOption,
+  ListboxOptions,
   Switch,
   TransitionChild,
   TransitionRoot
 } from '@headlessui/vue'
 import {
   IconBellRinging,
+  IconChevronDown,
   IconInfoCircle,
   IconPlus,
   IconTrash,
@@ -269,18 +274,52 @@ function getRuleOption(type: AlertRuleType) {
                         <div class="grid grid-cols-2 gap-3">
                           <label>
                             <span class="text-xs font-semibold text-slate-700">提醒条件</span>
-                            <select
-                              v-model="rule.type"
-                              class="mt-2 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-700 focus:border-emerald-400 focus:outline-none"
-                            >
-                              <option
-                                v-for="option in ruleOptions"
-                                :key="option.id"
-                                :value="option.id"
-                              >
-                                {{ option.name }}
-                              </option>
-                            </select>
+                            <Listbox v-model="rule.type">
+                              <div class="relative mt-2">
+                                <ListboxButton class="group relative flex h-10 w-full items-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 pl-7 pr-9 text-left text-xs font-semibold text-slate-800 shadow-inner shadow-white outline-none transition hover:border-emerald-300 hover:bg-white focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-100">
+                                  <span class="pointer-events-none absolute left-3 h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.65)]" />
+                                  <span class="block truncate">{{ getRuleOption(rule.type).name }}</span>
+                                  <span class="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-slate-50 via-slate-50/90 to-transparent transition group-hover:from-white group-hover:via-white/90" />
+                                  <IconChevronDown
+                                    :size="14"
+                                    class="pointer-events-none absolute right-3 text-emerald-700/70 transition group-hover:text-emerald-700"
+                                  />
+                                </ListboxButton>
+
+                                <Transition
+                                  enter-active-class="transition duration-150 ease-out"
+                                  enter-from-class="-translate-y-1 opacity-0"
+                                  enter-to-class="translate-y-0 opacity-100"
+                                  leave-active-class="transition duration-100 ease-in"
+                                  leave-from-class="translate-y-0 opacity-100"
+                                  leave-to-class="-translate-y-1 opacity-0"
+                                >
+                                  <ListboxOptions class="absolute left-0 top-[calc(100%+8px)] z-[80] w-full overflow-hidden rounded-xl border border-emerald-100 bg-white p-1 shadow-2xl shadow-slate-900/10 outline-none ring-1 ring-slate-900/5">
+                                    <ListboxOption
+                                      v-for="option in ruleOptions"
+                                      :key="option.id"
+                                      v-slot="{ active, selected }"
+                                      :value="option.id"
+                                      as="template"
+                                    >
+                                      <li
+                                        class="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold transition"
+                                        :class="[
+                                          active ? 'bg-emerald-50 text-emerald-900' : 'text-slate-600',
+                                          selected && 'text-emerald-700'
+                                        ]"
+                                      >
+                                        <span
+                                          class="h-1.5 w-1.5 rounded-full"
+                                          :class="selected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.65)]' : 'bg-slate-200'"
+                                        />
+                                        <span class="min-w-0 flex-1 truncate">{{ option.name }}</span>
+                                      </li>
+                                    </ListboxOption>
+                                  </ListboxOptions>
+                                </Transition>
+                              </div>
+                            </Listbox>
                           </label>
 
                           <label>

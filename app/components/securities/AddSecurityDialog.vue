@@ -96,7 +96,7 @@ onBeforeUnmount(() => {
           </div>
           <form
             class="flex gap-2 px-5 py-4"
-            @submit.prevent="search"
+            @submit.prevent="search()"
           >
             <label class="relative min-w-0 flex-1">
               <IconSearch
