@@ -15,6 +15,7 @@ const props = defineProps<{
   refreshing: boolean
   status: MonitorStatus
   provider: QuoteProvider
+  pollingIntervalMs: number
 }>()
 
 const emit = defineEmits<{
@@ -70,7 +71,7 @@ function changeProvider(provider: QuoteProvider) {
               {{ paused ? '监测已暂停' : status === 'ERROR' ? '行情请求异常' : status === 'STALE' ? '行情数据延迟' : status === 'RUNNING' ? '实时监测中' : '监测未启动' }}
             </p>
             <p class="mt-0.5 text-[11px] text-slate-400">
-              {{ status === 'ERROR' ? '请检查 Worker 或行情源' : paused ? '行情快照保持不变' : status === 'RUNNING' ? '前台 · 5 秒轮询' : '等待行情订阅' }}
+              {{ status === 'ERROR' ? '请检查 Worker 或行情源' : paused ? '行情快照保持不变' : status === 'RUNNING' ? `前台 · ${pollingIntervalMs / 1000} 秒轮询` : '等待行情订阅' }}
             </p>
           </div>
         </div>

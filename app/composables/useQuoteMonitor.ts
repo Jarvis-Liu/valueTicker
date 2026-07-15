@@ -40,8 +40,8 @@ export function useQuoteMonitor() {
     }
   }
 
-  function start(securities: SecurityItem[], provider: QuoteProvider, alerts?: Record<string, SecurityAlerts>) {
-    send({ type: 'START', securities, provider, alerts })
+  function start(securities: SecurityItem[], provider: QuoteProvider, alerts?: Record<string, SecurityAlerts>, pollingIntervalMs = 5000) {
+    send({ type: 'START', securities, provider, alerts, pollingIntervalMs })
   }
   function updateSecurities(securities: SecurityItem[], provider?: QuoteProvider) {
     send({ type: 'UPDATE_SECURITIES', securities, provider })
@@ -51,6 +51,9 @@ export function useQuoteMonitor() {
   }
   function updateProvider(provider: QuoteProvider) {
     send({ type: 'UPDATE_PROVIDER', provider })
+  }
+  function updatePollingInterval(pollingIntervalMs: number) {
+    send({ type: 'UPDATE_POLLING_INTERVAL', pollingIntervalMs })
   }
   function pause() {
     send({ type: 'PAUSE' })
@@ -68,7 +71,7 @@ export function useQuoteMonitor() {
     worker.value = null
   }
 
-  return { start, updateSecurities, updateAlerts, updateProvider, pause, resume, forceRefresh, stop }
+  return { start, updateSecurities, updateAlerts, updateProvider, updatePollingInterval, pause, resume, forceRefresh, stop }
 }
 
 function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
@@ -77,7 +80,8 @@ function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
       type: 'START',
       securities: message.securities.map(toPlainSecurity),
       provider: message.provider,
-      alerts: cloneAlerts(message.alerts)
+      alerts: cloneAlerts(message.alerts),
+      pollingIntervalMs: message.pollingIntervalMs
     }
   }
 

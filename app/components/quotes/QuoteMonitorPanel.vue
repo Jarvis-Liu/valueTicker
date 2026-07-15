@@ -13,6 +13,7 @@ defineProps<{
   title: string
   quotes: SecurityQuote[]
   canRemove: boolean
+  pollingIntervalMs: number
 }>()
 
 const search = defineModel<string>('search', { default: '' })
@@ -86,7 +87,7 @@ function pad(value: number) {
           <span class="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">{{ quotes.length }} 只</span>
         </div>
         <p class="mt-1 text-xs text-slate-400">
-          行情仅供参考，数据每 5 秒自动更新
+          行情仅供参考，数据每 {{ pollingIntervalMs / 1000 }} 秒自动更新
         </p>
       </div>
 

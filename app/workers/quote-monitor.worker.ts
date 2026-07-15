@@ -11,6 +11,7 @@ let running = false
 let paused = false
 let suppressNextAlerts = false
 let provider: QuoteProvider = 'EASTMONEY'
+let pollingIntervalMs = 5000
 
 self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
   const message = event.data
@@ -18,6 +19,7 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
     securities = message.securities
     if (message.provider) provider = message.provider
     if (message.type === 'START' && message.alerts) alertConfigs = message.alerts
+    if (message.type === 'START') pollingIntervalMs = normalizePollingInterval(message.pollingIntervalMs)
     suppressNextAlerts = true
     if (message.type === 'START') {
       running = true
@@ -32,6 +34,9 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
     provider = message.provider
     suppressNextAlerts = true
     await refresh(true)
+    if (running && !paused) schedule()
+  } else if (message.type === 'UPDATE_POLLING_INTERVAL') {
+    pollingIntervalMs = normalizePollingInterval(message.pollingIntervalMs)
     if (running && !paused) schedule()
   } else if (message.type === 'UPDATE_ALERTS') {
     alertConfigs = message.alerts
@@ -85,7 +90,7 @@ function fetchQuotes(nextSecurities: SecurityItem[]) {
 function schedule() {
   clearTimer()
   if (!running || paused) return
-  const delay = 5000 - (Date.now() % 5000)
+  const delay = pollingIntervalMs - (Date.now() % pollingIntervalMs)
   timer = setTimeout(async () => {
     await refresh(false)
     schedule()
@@ -95,6 +100,11 @@ function schedule() {
 function clearTimer() {
   if (timer) clearTimeout(timer)
   timer = undefined
+}
+
+function normalizePollingInterval(value?: number) {
+  if (!Number.isFinite(value)) return 5000
+  return Math.max(5000, Math.floor(value as number))
 }
 
 function post(message: QuoteWorkerResponse) {

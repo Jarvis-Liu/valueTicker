@@ -4,6 +4,7 @@ import AlertRuleDrawer from '~/components/alerts/AlertRuleDrawer.vue'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import GroupFormDialog from '~/components/groups/GroupFormDialog.vue'
 import GroupSidebar from '~/components/groups/GroupSidebar.vue'
+import MonitorSettingsDialog from '~/components/monitoring/MonitorSettingsDialog.vue'
 import AddSecurityDialog from '~/components/securities/AddSecurityDialog.vue'
 import TransferSecurityDialog from '~/components/securities/TransferSecurityDialog.vue'
 import AppHeader from '~/components/layout/AppHeader.vue'
@@ -36,6 +37,7 @@ const quotes: SecurityQuote[] = [
 
 const selectedGroupId = ref('all')
 const quoteProvider = ref<QuoteProvider>('EASTMONEY')
+const pollingIntervalMs = useLocalStorage<number>('value-ticker:polling-interval-ms', 5000)
 const search = ref('')
 const paused = ref(false)
 const refreshing = ref(false)
@@ -44,6 +46,7 @@ const activeQuote = ref<SecurityQuote | null>(null)
 const savedToast = ref(false)
 const toastMessage = ref('操作已完成')
 const groupFormOpen = ref(false)
+const monitorSettingsOpen = ref(false)
 const groupFormMode = ref<'create' | 'rename'>('create')
 const activeGroup = ref<WatchGroup | null>(null)
 const deleteConfirmOpen = ref(false)
@@ -103,7 +106,7 @@ onMounted(async () => {
     try {
       await userConfigStore.loadConfig()
       if (enableQuoteWorker) {
-        quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value, activeAlerts.value)
+        quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value, activeAlerts.value, pollingIntervalMs.value)
         monitorStarted = true
       }
       return
@@ -152,6 +155,21 @@ function changeQuoteProvider(provider: QuoteProvider) {
   quoteProvider.value = provider
   marketStore.setStatus('RUNNING')
   if (monitorStarted) quoteMonitor.updateProvider(provider)
+}
+
+function saveMonitorSettings(settings: { provider: QuoteProvider, pollingIntervalMs: number }) {
+  const providerChanged = quoteProvider.value !== settings.provider
+  quoteProvider.value = settings.provider
+  pollingIntervalMs.value = settings.pollingIntervalMs
+  marketStore.setStatus('RUNNING')
+
+  if (monitorStarted) {
+    if (providerChanged) quoteMonitor.updateProvider(settings.provider)
+    quoteMonitor.updatePollingInterval(settings.pollingIntervalMs)
+  }
+
+  monitorSettingsOpen.value = false
+  showSavedToast(`监测设置已保存：每 ${settings.pollingIntervalMs / 1000} 秒轮询`)
 }
 
 function getSubscriptionSecurities(groupId: string) {
@@ -379,6 +397,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
       <AppHeader
         :paused="paused"
         :provider="quoteProvider"
+        :polling-interval-ms="pollingIntervalMs"
         :refreshing="refreshing"
         :status="marketStore.status"
         @provider-change="changeQuoteProvider"
@@ -405,6 +424,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
             @add="openGroupForm"
             @rename="openRenameGroupForm"
             @delete="openDeleteGroupConfirm"
+            @settings="monitorSettingsOpen = true"
           />
 
           <div class="min-w-0 space-y-4">
@@ -413,6 +433,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               :title="selectedGroup.name"
               :quotes="visibleQuotes"
               :can-remove="selectedGroupId !== 'all'"
+              :polling-interval-ms="pollingIntervalMs"
               @alert="openAlert"
               @add="openAddSecurity"
               @remove="openRemoveSecurityConfirm"
@@ -442,6 +463,14 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
       :saving="userConfigStore.saving"
       @close="alertOpen = false"
       @save="saveAlertRules"
+    />
+
+    <MonitorSettingsDialog
+      :open="monitorSettingsOpen"
+      :provider="quoteProvider"
+      :polling-interval-ms="pollingIntervalMs"
+      @close="monitorSettingsOpen = false"
+      @save="saveMonitorSettings"
     />
 
     <GroupFormDialog

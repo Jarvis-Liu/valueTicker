@@ -53,7 +53,7 @@ function parseTencentLine(line: string): NormalizedQuote | null {
     high: number(fields[33]),
     low: number(fields[34]),
     previousClose,
-    updatedAt: fields[30] || new Date().toISOString(),
+    updatedAt: formatTencentDateTime(fields[30]),
     status: 'TRADING',
     provider: 'TENCENT'
   }
@@ -62,4 +62,14 @@ function parseTencentLine(line: string): NormalizedQuote | null {
 function number(value: string | undefined) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : Number.NaN
+}
+
+/** 将腾讯 YYYYMMDDHHmmss 行情时间转换为统一的本地展示格式。 */
+function formatTencentDateTime(value: string | undefined) {
+  const matched = value?.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/)
+  if (matched) return `${matched[1]}-${matched[2]}-${matched[3]} ${matched[4]}:${matched[5]}:${matched[6]}`
+
+  const now = new Date()
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
 }

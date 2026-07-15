@@ -30,12 +30,13 @@ export interface QuoteAlertEvent {
 }
 
 export type QuoteWorkerRequest
-  = | { type: 'START', securities: SecurityItem[], provider: QuoteProvider, alerts?: Record<string, SecurityAlerts> }
+  = | { type: 'START', securities: SecurityItem[], provider: QuoteProvider, alerts?: Record<string, SecurityAlerts>, pollingIntervalMs?: number }
     | { type: 'STOP' }
     | { type: 'PAUSE' }
     | { type: 'RESUME' }
     | { type: 'FORCE_REFRESH' }
     | { type: 'UPDATE_PROVIDER', provider: QuoteProvider }
+    | { type: 'UPDATE_POLLING_INTERVAL', pollingIntervalMs: number }
     | { type: 'UPDATE_SECURITIES', securities: SecurityItem[], provider?: QuoteProvider }
     | { type: 'UPDATE_ALERTS', alerts: Record<string, SecurityAlerts> }
 

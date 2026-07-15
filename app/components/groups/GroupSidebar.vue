@@ -28,6 +28,7 @@ const emit = defineEmits<{
   add: []
   rename: [group: WatchGroup]
   delete: [group: WatchGroup]
+  settings: []
 }>()
 
 const persistedGroupCount = computed(() => props.groups.filter(group => group.id !== 'all').length)
@@ -170,9 +171,10 @@ function positionMenu(groupId: string, event: MouseEvent) {
       <button
         type="button"
         class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+        @click="emit('settings')"
       >
         <IconSettings :size="17" />
-        Provider 设置
+        监测设置
       </button>
       <div class="mt-2 flex gap-2 rounded-xl bg-amber-50 px-3 py-3 text-amber-800">
         <IconInfoCircle
