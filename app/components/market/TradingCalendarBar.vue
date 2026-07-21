@@ -1,9 +1,22 @@
 <script setup lang="ts">
 import { IconCalendarEvent } from '@tabler/icons-vue'
+import { getMarketSessionState } from '~/utils/market-calendar'
 
 defineProps<{
   lastUpdatedAt: string
 }>()
+
+const now = ref(new Date())
+const marketSession = computed(() => getMarketSessionState(now.value))
+let clockTimer: ReturnType<typeof setInterval> | undefined
+
+onMounted(() => {
+  clockTimer = setInterval(() => { now.value = new Date() }, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer)
+})
 </script>
 
 <template>
@@ -13,7 +26,7 @@ defineProps<{
         :size="15"
         class="shrink-0 text-emerald-700"
       />
-      交易日历已校准：2026 年 · 当前处于连续竞价时段
+      交易日历{{ marketSession.isCalendarCalibrated ? '已校准' : '未校准（按工作日判断）' }} · 当前{{ marketSession.label }}
     </p>
     <p class="text-emerald-700/70">
       行情数据 · 最后更新 {{ lastUpdatedAt }}

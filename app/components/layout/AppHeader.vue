@@ -16,6 +16,7 @@ const props = defineProps<{
   status: MonitorStatus
   provider: QuoteProvider
   pollingIntervalMs: number
+  lastUpdatedAt: string
 }>()
 
 const emit = defineEmits<{
@@ -135,7 +136,7 @@ function changeProvider(provider: QuoteProvider) {
             最近更新
           </p>
           <p class="mt-0.5 text-xs font-medium tabular-number">
-            10:26:35
+            {{ lastUpdatedAt }}
           </p>
         </div>
       </div>

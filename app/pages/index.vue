@@ -399,6 +399,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         :provider="quoteProvider"
         :polling-interval-ms="pollingIntervalMs"
         :refreshing="refreshing"
+        :last-updated-at="lastUpdatedAt"
         :status="marketStore.status"
         @provider-change="changeQuoteProvider"
         @toggle="toggleMonitor"
