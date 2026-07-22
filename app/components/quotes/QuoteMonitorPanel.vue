@@ -8,10 +8,13 @@ import {
 } from '@tabler/icons-vue'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import type { SecurityQuote } from '~/types/market'
+import type { SecurityIntradayTrend } from '~/services/quotes/types'
+import IntradayTrendSparkline from './IntradayTrendSparkline.vue'
 
 defineProps<{
   title: string
   quotes: SecurityQuote[]
+  trends: Record<string, SecurityIntradayTrend>
   canRemove: boolean
   pollingIntervalMs: number
 }>()
@@ -123,11 +126,14 @@ function pad(value: number) {
     </div>
 
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[940px] border-separate border-spacing-0 text-left">
+      <table class="w-full min-w-[1060px] border-separate border-spacing-0 text-left">
         <thead>
           <tr class="text-[11px] font-medium text-slate-400">
             <th class="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3 font-medium">
               证券
+            </th>
+            <th class="border-b border-slate-100 px-3 py-3 font-medium">
+              当日走势
             </th>
             <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
               最新价
@@ -179,6 +185,9 @@ function pad(value: number) {
                   </p>
                 </div>
               </div>
+            </td>
+            <td class="border-b border-slate-100 px-3 py-3.5">
+              <IntradayTrendSparkline :trend="trends[quote.securityId]" />
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5 text-right">
               <p

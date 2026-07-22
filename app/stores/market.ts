@@ -1,8 +1,9 @@
-import type { NormalizedQuote, MonitorStatus, QuoteAlertEvent } from '~/services/quotes/types'
+import type { NormalizedQuote, MonitorStatus, QuoteAlertEvent, SecurityIntradayTrend } from '~/services/quotes/types'
 import type { AlertNotification } from '~/types/market'
 
 export const useMarketStore = defineStore('market', () => {
   const quotes = ref<Record<string, NormalizedQuote>>({})
+  const intradayTrends = ref<Record<string, SecurityIntradayTrend>>({})
   const alertNotifications = ref<AlertNotification[]>([])
   const status = ref<MonitorStatus>('IDLE')
   const errorMessage = ref('')
@@ -20,6 +21,18 @@ export const useMarketStore = defineStore('market', () => {
 
     for (const quote of nextQuotes) quotes.value[quote.securityId] = quote
     lastUpdatedAt.value = nextQuotes.at(-1)?.updatedAt ?? lastUpdatedAt.value
+  }
+
+  function updateTrends(nextTrends: SecurityIntradayTrend[], requestedSecurityIds?: string[]) {
+    if (requestedSecurityIds) {
+      const requested = new Set(requestedSecurityIds)
+      const returned = new Set(nextTrends.map(trend => trend.securityId))
+      intradayTrends.value = Object.fromEntries(Object.entries(intradayTrends.value).filter(([securityId]) => {
+        return !requested.has(securityId) || returned.has(securityId)
+      }))
+    }
+
+    for (const trend of nextTrends) intradayTrends.value[trend.securityId] = trend
   }
 
   function setStatus(nextStatus: MonitorStatus, message = '') {
@@ -43,7 +56,7 @@ export const useMarketStore = defineStore('market', () => {
     ].slice(0, 20)
   }
 
-  return { quotes, alertNotifications, status, errorMessage, lastUpdatedAt, providerLatencyMs, updateQuotes, setStatus, setProviderLatency, clearQuotes, addAlertEvent }
+  return { quotes, intradayTrends, alertNotifications, status, errorMessage, lastUpdatedAt, providerLatencyMs, updateQuotes, updateTrends, setStatus, setProviderLatency, clearQuotes, addAlertEvent }
 })
 
 function toAlertNotification(event: QuoteAlertEvent): AlertNotification {

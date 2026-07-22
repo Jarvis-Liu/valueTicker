@@ -12,6 +12,7 @@ export function useQuoteMonitor() {
       worker.value.onmessage = (event: MessageEvent<QuoteWorkerResponse>) => {
         const message = event.data
         if (message.type === 'QUOTE_SNAPSHOT') marketStore.updateQuotes(message.quotes, message.securityIds)
+        if (message.type === 'TREND_SNAPSHOT') marketStore.updateTrends(message.trends, message.securityIds)
         if (message.type === 'ALERT_TRIGGERED') {
           marketStore.addAlertEvent(message.event)
           browserNotifications.notifyAlert(message.event)
@@ -68,6 +69,12 @@ export function useQuoteMonitor() {
   function refreshSecurities(securities: SecurityItem[]) {
     send({ type: 'REFRESH_SECURITIES', securities })
   }
+  function updateTrendSecurities(securities: SecurityItem[]) {
+    send({ type: 'UPDATE_TREND_SECURITIES', securities })
+  }
+  function updateWindowActivity(active: boolean) {
+    send({ type: 'UPDATE_WINDOW_ACTIVITY', active })
+  }
   function stop() {
     if (!worker.value) return
     worker.value.postMessage({ type: 'STOP' } satisfies QuoteWorkerRequest)
@@ -75,7 +82,7 @@ export function useQuoteMonitor() {
     worker.value = null
   }
 
-  return { start, updateSecurities, updateAlerts, updateProvider, updatePollingInterval, pause, resume, forceRefresh, refreshSecurities, stop }
+  return { start, updateSecurities, updateAlerts, updateProvider, updatePollingInterval, pause, resume, forceRefresh, refreshSecurities, updateTrendSecurities, updateWindowActivity, stop }
 }
 
 function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
@@ -91,6 +98,10 @@ function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
 
   if (message.type === 'REFRESH_SECURITIES') {
     return { type: 'REFRESH_SECURITIES', securities: message.securities.map(toPlainSecurity) }
+  }
+
+  if (message.type === 'UPDATE_TREND_SECURITIES') {
+    return { type: 'UPDATE_TREND_SECURITIES', securities: message.securities.map(toPlainSecurity) }
   }
 
   if (message.type === 'UPDATE_SECURITIES') {

@@ -118,6 +118,8 @@ onMounted(async () => {
       if (enableQuoteWorker) {
         quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value, activeAlerts.value, pollingIntervalMs.value)
         monitorStarted = true
+        quoteMonitor.updateWindowActivity(isWindowActive())
+        quoteMonitor.updateTrendSecurities(trendSecurities.value)
       }
       return
     } catch {
@@ -133,10 +135,16 @@ onMounted(async () => {
 })
 
 const subscriptionSecurities = computed<SecurityItem[]>(() => getPollingSecurities(userConfigStore.stockGroups, MARKET_INDEX_SECURITIES))
+const trendSecurities = computed<SecurityItem[]>(() => getGroupSecurities(userConfigStore.stockGroups, selectedGroupId.value))
 
 watch(subscriptionSecurities, (nextSecurities) => {
   if (!monitorStarted) return
   quoteMonitor.updateSecurities(nextSecurities, quoteProvider.value)
+}, { deep: true })
+
+watch(trendSecurities, (nextSecurities) => {
+  if (!monitorStarted) return
+  quoteMonitor.updateTrendSecurities(nextSecurities)
 }, { deep: true })
 
 watch(activeAlerts, (nextAlerts) => {
@@ -144,7 +152,18 @@ watch(activeAlerts, (nextAlerts) => {
   quoteMonitor.updateAlerts(nextAlerts)
 }, { deep: true })
 
-onUnmounted(() => quoteMonitor.stop())
+onMounted(() => {
+  window.addEventListener('focus', syncWindowActivity)
+  window.addEventListener('blur', syncWindowActivity)
+  document.addEventListener('visibilitychange', syncWindowActivity)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('focus', syncWindowActivity)
+  window.removeEventListener('blur', syncWindowActivity)
+  document.removeEventListener('visibilitychange', syncWindowActivity)
+  quoteMonitor.stop()
+})
 
 watch(groups, (nextGroups) => {
   const selectedGroupExists = nextGroups.some(group => group.id === selectedGroupId.value)
@@ -159,6 +178,15 @@ function selectGroup(groupId: string) {
   selectedGroupId.value = groupId
   // 切换视图是用户主动操作；闭市时允许拉取一次最新快照，但不会恢复自动轮询。
   if (monitorStarted) quoteMonitor.refreshSecurities(getGroupSecurities(userConfigStore.stockGroups, groupId))
+}
+
+function isWindowActive() {
+  return document.visibilityState === 'visible' && document.hasFocus()
+}
+
+function syncWindowActivity() {
+  if (!monitorStarted) return
+  quoteMonitor.updateWindowActivity(isWindowActive())
 }
 
 function changeQuoteProvider(provider: QuoteProvider) {
@@ -445,6 +473,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               v-model:search="search"
               :title="selectedGroup.name"
               :quotes="visibleQuotes"
+              :trends="marketStore.intradayTrends"
               :can-remove="selectedGroupId !== 'all'"
               :polling-interval-ms="pollingIntervalMs"
               @alert="openAlert"

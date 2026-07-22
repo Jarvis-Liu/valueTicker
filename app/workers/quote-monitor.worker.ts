@@ -1,21 +1,29 @@
 import { fetchEastmoneyQuotes } from '../services/quotes/eastmoney.adapter'
+import { fetchEastmoneyIntradayTrend } from '../services/quotes/eastmoney-trends.adapter'
 import { fetchTencentQuotes } from '../services/quotes/tencent.adapter'
+import { fetchTencentIntradayTrend } from '../services/quotes/tencent-trends.adapter'
 import { evaluateQuoteAlerts } from '../utils/alert-engine'
 import { getMarketSessionState, getNextAutomaticRefreshAt, isContinuousAuction } from '../utils/market-calendar'
-import type { QuoteProvider, QuoteWorkerRequest, QuoteWorkerResponse } from '../services/quotes/types'
+import type { QuoteProvider, QuoteWorkerRequest, QuoteWorkerResponse, SecurityIntradayTrend } from '../services/quotes/types'
 import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
 
 let securities: SecurityItem[] = []
+let trendSecurities: SecurityItem[] = []
 let alertConfigs: Record<string, SecurityAlerts> = {}
-let timer: ReturnType<typeof setTimeout> | undefined
+let quoteTimer: ReturnType<typeof setTimeout> | undefined
+let trendTimer: ReturnType<typeof setTimeout> | undefined
 let running = false
 let paused = false
+let windowActive = false
 let suppressNextAlerts = false
+let trendRefreshInFlight = false
+let trendRequestVersion = 0
 let provider: QuoteProvider = 'EASTMONEY'
 let pollingIntervalMs = 5000
 
 self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
   const message = event.data
+
   if (message.type === 'START' || message.type === 'UPDATE_SECURITIES') {
     securities = message.securities
     if (message.provider) provider = message.provider
@@ -26,43 +34,96 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
       running = true
       paused = false
     }
-    // 首次进入与切换分组属于用户发起的请求，闭市时仍允许执行一次。
-    if (running) await refresh()
-    schedule()
-  } else if (message.type === 'UPDATE_PROVIDER') {
+    if (running) await refreshQuotes()
+    scheduleQuotes()
+    return
+  }
+
+  if (message.type === 'UPDATE_PROVIDER') {
     provider = message.provider
     suppressNextAlerts = true
-    await refresh()
-    schedule()
-  } else if (message.type === 'UPDATE_POLLING_INTERVAL') {
+    trendRequestVersion += 1
+    await refreshQuotes()
+    if (windowActive && isContinuousAuction()) await refreshTrends()
+    scheduleQuotes()
+    scheduleTrends()
+    return
+  }
+
+  if (message.type === 'UPDATE_POLLING_INTERVAL') {
     pollingIntervalMs = normalizePollingInterval(message.pollingIntervalMs)
-    schedule()
-  } else if (message.type === 'UPDATE_ALERTS') {
+    scheduleQuotes()
+    return
+  }
+
+  if (message.type === 'UPDATE_ALERTS') {
     alertConfigs = message.alerts
-  } else if (message.type === 'STOP') {
+    return
+  }
+
+  if (message.type === 'UPDATE_TREND_SECURITIES') {
+    const securitiesChanged = !hasSameSecurityIds(trendSecurities, message.securities)
+    trendSecurities = message.securities
+    if (securitiesChanged) trendRequestVersion += 1
+    if (windowActive && isContinuousAuction()) await refreshTrends()
+    scheduleTrends()
+    return
+  }
+
+  if (message.type === 'UPDATE_WINDOW_ACTIVITY') {
+    windowActive = message.active
+    trendRequestVersion += 1
+    if (windowActive && isContinuousAuction()) await refreshTrends()
+    scheduleTrends()
+    return
+  }
+
+  if (message.type === 'STOP') {
     running = false
-    clearTimer()
+    clearQuoteTimer()
+    clearTrendTimer()
     post({ type: 'STATUS', status: 'IDLE' })
-  } else if (message.type === 'PAUSE') {
+    return
+  }
+
+  if (message.type === 'PAUSE') {
     paused = true
-    clearTimer()
+    clearQuoteTimer()
+    clearTrendTimer()
     post({ type: 'STATUS', status: 'PAUSED' })
-  } else if (message.type === 'RESUME') {
+    return
+  }
+
+  if (message.type === 'RESUME') {
     paused = false
     suppressNextAlerts = true
-    if (isContinuousAuction()) await refresh()
+    if (isContinuousAuction()) await refreshQuotes()
     else postMarketStatus()
-    schedule()
-  } else if (message.type === 'REFRESH_SECURITIES') {
-    // 仅刷新当前视图；不覆盖自动轮询使用的全量证券订阅。
-    await refresh(message.securities)
-  } else if (message.type === 'FORCE_REFRESH') {
-    await refresh()
-    schedule()
+    scheduleQuotes()
+    scheduleTrends()
+    return
+  }
+
+  if (message.type === 'REFRESH_SECURITIES') {
+    // 分组切换属于主动刷新：同步更新趋势订阅，并允许闭市时拉取一次当日分时数据。
+    trendSecurities = message.securities
+    trendRequestVersion += 1
+    const trendRefresh = refreshTrends(true)
+    await refreshQuotes(message.securities)
+    await trendRefresh
+    scheduleTrends()
+    return
+  }
+
+  if (message.type === 'FORCE_REFRESH') {
+    await refreshQuotes()
+    await refreshTrends(true)
+    scheduleQuotes()
+    scheduleTrends()
   }
 }
 
-async function refresh(nextSecurities = securities) {
+async function refreshQuotes(nextSecurities = securities) {
   if (!running || !nextSecurities.length) {
     postMarketStatus()
     return
@@ -73,17 +134,19 @@ async function refresh(nextSecurities = securities) {
     const quotes = await fetchQuotes(nextSecurities)
     post({ type: 'METRICS', providerLatencyMs: Date.now() - startedAt })
     post({ type: 'QUOTE_SNAPSHOT', quotes, securityIds: nextSecurities.map(item => item.securityId) })
+
     if (!isContinuousAuction()) {
-      // 非交易时段的快照只用于下一个交易时段建立提醒基准。
       suppressNextAlerts = true
-    } else if (suppressNextAlerts) suppressNextAlerts = false
-    else {
+    } else if (suppressNextAlerts) {
+      suppressNextAlerts = false
+    } else {
       const securitiesById = new Map(nextSecurities.map(security => [security.securityId, security]))
       for (const quote of quotes) {
         const events = evaluateQuoteAlerts(quote, securitiesById.get(quote.securityId), alertConfigs[quote.securityId])
-        for (const event of events) post({ type: 'ALERT_TRIGGERED', event })
+        for (const alertEvent of events) post({ type: 'ALERT_TRIGGERED', event: alertEvent })
       }
     }
+
     post({ type: 'STATUS', status: quotes.length ? currentMonitorStatus() : 'STALE' })
   } catch (error) {
     post({ type: 'METRICS', providerLatencyMs: null })
@@ -92,20 +155,86 @@ async function refresh(nextSecurities = securities) {
   }
 }
 
+async function refreshTrends(force = false) {
+  const canAutomaticallyRefresh = !paused && windowActive && isContinuousAuction()
+  if (!running || !trendSecurities.length || trendRefreshInFlight || (!force && !canAutomaticallyRefresh)) return
+
+  trendRefreshInFlight = true
+  const requestVersion = trendRequestVersion
+  const requestedSecurities = [...trendSecurities]
+
+  try {
+    const trends = await fetchIntradayTrends(requestedSecurities)
+    if (requestVersion !== trendRequestVersion || (!force && (!windowActive || !isContinuousAuction()))) return
+    post({ type: 'TREND_SNAPSHOT', trends, securityIds: requestedSecurities.map(item => item.securityId) })
+  } finally {
+    trendRefreshInFlight = false
+  }
+}
+
+async function fetchIntradayTrends(nextSecurities: SecurityItem[]) {
+  const results: SecurityIntradayTrend[] = []
+  let index = 0
+
+  async function consume() {
+    while (index < nextSecurities.length) {
+      const security = nextSecurities[index++]!
+      try {
+        results.push(await fetchIntradayTrend(security))
+      } catch {
+        results.push({
+          securityId: security.securityId,
+          previousClose: Number.NaN,
+          openingPrice: Number.NaN,
+          points: [],
+          updatedAt: '',
+          provider,
+          status: 'ERROR'
+        })
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(4, nextSecurities.length) }, consume))
+  return results
+}
+
 function fetchQuotes(nextSecurities: SecurityItem[]) {
   return provider === 'TENCENT' ? fetchTencentQuotes(nextSecurities) : fetchEastmoneyQuotes(nextSecurities)
 }
 
-function schedule() {
-  clearTimer()
+function fetchIntradayTrend(security: SecurityItem) {
+  return provider === 'TENCENT'
+    ? fetchTencentIntradayTrend(security)
+    : fetchEastmoneyIntradayTrend(security)
+}
+
+function hasSameSecurityIds(left: SecurityItem[], right: SecurityItem[]) {
+  return left.length === right.length && left.every((security, index) => security.securityId === right[index]?.securityId)
+}
+
+function scheduleQuotes() {
+  clearQuoteTimer()
   if (!running || paused) return
+
   const nextRunAt = getNextAutomaticRefreshAt(new Date(), pollingIntervalMs)
-  timer = setTimeout(async () => {
+  quoteTimer = setTimeout(async () => {
     if (!running || paused) return
-    await refresh()
-    schedule()
+    await refreshQuotes()
+    scheduleQuotes()
   }, Math.max(0, nextRunAt.getTime() - Date.now()))
   postMarketStatus()
+}
+
+function scheduleTrends() {
+  clearTrendTimer()
+  if (!running || paused || !windowActive || !trendSecurities.length) return
+
+  const nextRunAt = getNextAutomaticRefreshAt(new Date(), 60_000)
+  trendTimer = setTimeout(async () => {
+    if (running && !paused && windowActive && isContinuousAuction()) await refreshTrends()
+    scheduleTrends()
+  }, Math.max(0, nextRunAt.getTime() - Date.now()))
 }
 
 function currentMonitorStatus() {
@@ -116,9 +245,14 @@ function postMarketStatus() {
   if (!paused && running) post({ type: 'STATUS', status: currentMonitorStatus(), message: getMarketSessionState().label })
 }
 
-function clearTimer() {
-  if (timer) clearTimeout(timer)
-  timer = undefined
+function clearQuoteTimer() {
+  if (quoteTimer) clearTimeout(quoteTimer)
+  quoteTimer = undefined
+}
+
+function clearTrendTimer() {
+  if (trendTimer) clearTimeout(trendTimer)
+  trendTimer = undefined
 }
 
 function normalizePollingInterval(value?: number) {

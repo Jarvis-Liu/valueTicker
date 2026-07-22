@@ -25,6 +25,24 @@ export interface NormalizedQuote {
   provider: QuoteProvider
 }
 
+export interface IntradayTrendPoint {
+  time: string
+  price: number
+  averagePrice: number
+  volume: number
+  amount: number
+}
+
+export interface SecurityIntradayTrend {
+  securityId: string
+  previousClose: number
+  openingPrice: number
+  points: IntradayTrendPoint[]
+  updatedAt: string
+  provider: QuoteProvider
+  status: 'READY' | 'STALE' | 'ERROR'
+}
+
 export interface QuoteAlertEvent {
   id: string
   securityId: string
@@ -44,6 +62,8 @@ export type QuoteWorkerRequest
     | { type: 'RESUME' }
     | { type: 'FORCE_REFRESH' }
     | { type: 'REFRESH_SECURITIES', securities: SecurityItem[] }
+    | { type: 'UPDATE_TREND_SECURITIES', securities: SecurityItem[] }
+    | { type: 'UPDATE_WINDOW_ACTIVITY', active: boolean }
     | { type: 'UPDATE_PROVIDER', provider: QuoteProvider }
     | { type: 'UPDATE_POLLING_INTERVAL', pollingIntervalMs: number }
     | { type: 'UPDATE_SECURITIES', securities: SecurityItem[], provider?: QuoteProvider }
@@ -51,6 +71,7 @@ export type QuoteWorkerRequest
 
 export type QuoteWorkerResponse
   = | { type: 'QUOTE_SNAPSHOT', quotes: NormalizedQuote[], securityIds: string[] }
+    | { type: 'TREND_SNAPSHOT', trends: SecurityIntradayTrend[], securityIds: string[] }
     | { type: 'ALERT_TRIGGERED', event: QuoteAlertEvent }
     | { type: 'STATUS', status: MonitorStatus, message?: string }
     | { type: 'METRICS', providerLatencyMs: number | null }
