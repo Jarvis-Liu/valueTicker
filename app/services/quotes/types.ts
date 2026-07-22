@@ -8,10 +8,18 @@ export interface NormalizedQuote {
   price: number
   change: number
   changePercent: number
+  volume: number
+  amount: number
+  turnoverRate: number
   open: number
   high: number
   low: number
   previousClose: number
+  totalMarketValue: number
+  peTtm: number
+  providerCode: string
+  providerMarket: number
+  providerName: string
   updatedAt: string
   status: 'TRADING' | 'STALE' | 'SUSPENDED' | 'ERROR'
   provider: QuoteProvider

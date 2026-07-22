@@ -88,11 +88,6 @@ function save() {
     return
   }
 
-  if (normalizedRules.length > 0 && normalizedRules.every(rule => !rule.enabled)) {
-    validationMessage.value = '至少开启一条规则才能进入监测；如果不需要提醒，可以删除全部规则后保存'
-    return
-  }
-
   emit('save', normalizedRules)
 }
 

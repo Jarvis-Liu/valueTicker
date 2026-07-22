@@ -4,7 +4,7 @@ import type { NormalizedQuote } from './types'
 const ENDPOINT = 'https://push2.eastmoney.com/api/qt/ulist.np/get'
 const BATCH_SIZE = 80
 const TIMEOUT_MS = 3000
-const FIELDS = 'f2,f3,f12,f13,f14,f18,f6'
+const FIELDS = 'f2,f3,f4,f5,f6,f8,f12,f13,f14,f15,f16,f17,f18,f20,f114'
 
 export async function fetchEastmoneyQuotes(securities: SecurityItem[]): Promise<NormalizedQuote[]> {
   const batches: SecurityItem[][] = []
@@ -52,6 +52,7 @@ function convertEastmoneyQuote(item: EastmoneyQuoteItem): NormalizedQuote | null
   const exchange = item.f13 === 1 ? 'SSE' : code.startsWith('9') ? 'BSE' : 'SZSE'
   const price = number(item.f2)
   const previousClose = number(item.f18)
+  const change = number(item.f4)
   const changePercent = number(item.f3)
 
   if (!Number.isFinite(price)) return null
@@ -59,12 +60,20 @@ function convertEastmoneyQuote(item: EastmoneyQuoteItem): NormalizedQuote | null
   return {
     securityId: `${exchange}:${code}`,
     price,
-    change: Number.isFinite(previousClose) ? price - previousClose : Number.NaN,
+    change: Number.isFinite(change) ? change : Number.isFinite(previousClose) ? price - previousClose : Number.NaN,
     changePercent,
-    open: Number.NaN,
-    high: Number.NaN,
-    low: Number.NaN,
+    volume: number(item.f5),
+    amount: number(item.f6),
+    turnoverRate: number(item.f8),
+    open: number(item.f17),
+    high: number(item.f15),
+    low: number(item.f16),
     previousClose,
+    totalMarketValue: number(item.f20),
+    peTtm: number(item.f114),
+    providerCode: code,
+    providerMarket: item.f13 ?? Number.NaN,
+    providerName: item.f14 ?? '',
     updatedAt: formatLocalDateTime(new Date()),
     status: 'TRADING',
     provider: 'EASTMONEY'
@@ -100,9 +109,17 @@ interface EastmoneyQuoteResponse {
 interface EastmoneyQuoteItem {
   f2?: number | string
   f3?: number | string
+  f4?: number | string
+  f5?: number | string
   f6?: number | string
+  f8?: number | string
   f12?: number | string
   f13?: number
   f14?: string
+  f15?: number | string
+  f16?: number | string
+  f17?: number | string
   f18?: number | string
+  f20?: number | string
+  f114?: number | string
 }

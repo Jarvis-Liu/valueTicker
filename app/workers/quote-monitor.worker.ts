@@ -73,7 +73,10 @@ async function refresh(nextSecurities = securities) {
     const quotes = await fetchQuotes(nextSecurities)
     post({ type: 'METRICS', providerLatencyMs: Date.now() - startedAt })
     post({ type: 'QUOTE_SNAPSHOT', quotes, securityIds: nextSecurities.map(item => item.securityId) })
-    if (suppressNextAlerts) suppressNextAlerts = false
+    if (!isContinuousAuction()) {
+      // 非交易时段的快照只用于下一个交易时段建立提醒基准。
+      suppressNextAlerts = true
+    } else if (suppressNextAlerts) suppressNextAlerts = false
     else {
       const securitiesById = new Map(nextSecurities.map(security => [security.securityId, security]))
       for (const quote of quotes) {
