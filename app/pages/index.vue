@@ -13,9 +13,10 @@ import TradingCalendarBar from '~/components/market/TradingCalendarBar.vue'
 import QuoteHealthCards from '~/components/quotes/QuoteHealthCards.vue'
 import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
 import type { SecurityQuote, WatchGroup } from '~/types/market'
-import type { QuoteProvider } from '~/services/quotes/types'
+import type { NormalizedQuote, QuoteProvider } from '~/services/quotes/types'
 import type { AlertRule, SecurityItem } from '~~/shared/types/stock'
 import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
+import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 
 const userConfigStore = useUserConfigStore()
 const marketStore = useMarketStore()
@@ -102,6 +103,11 @@ const enabledAlertCount = computed(() => configuredQuotes.value.reduce((total, q
 const coveredAlertSecurityCount = computed(() => configuredQuotes.value.filter(quote => quote.alertCount > 0).length)
 const activeAlertRules = computed(() => activeQuote.value ? userConfigStore.config?.alerts[activeQuote.value.securityId]?.rules ?? [] : [])
 const activeAlerts = computed(() => userConfigStore.config?.alerts ?? {})
+const marketIndexQuotes = computed<NormalizedQuote[]>(() =>
+  MARKET_INDEX_SECURITIES
+    .map(index => marketStore.quotes[index.securityId])
+    .filter((quote): quote is NormalizedQuote => Boolean(quote))
+)
 
 onMounted(async () => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -124,7 +130,7 @@ onMounted(async () => {
   }
 })
 
-const subscriptionSecurities = computed<SecurityItem[]>(() => getPollingSecurities(userConfigStore.stockGroups))
+const subscriptionSecurities = computed<SecurityItem[]>(() => getPollingSecurities(userConfigStore.stockGroups, MARKET_INDEX_SECURITIES))
 
 watch(subscriptionSecurities, (nextSecurities) => {
   if (!monitorStarted) return
@@ -455,7 +461,11 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
           </div>
 
           <div class="lg:col-start-2 xl:col-start-auto">
-            <MarketInsightRail :notifications="marketStore.alertNotifications" />
+            <MarketInsightRail
+              :notifications="marketStore.alertNotifications"
+              :index-quotes="marketIndexQuotes"
+              :watchlist-quotes="configuredQuotes"
+            />
           </div>
         </div>
       </div>
