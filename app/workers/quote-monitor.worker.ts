@@ -69,7 +69,9 @@ async function refresh(nextSecurities = securities) {
   }
 
   try {
+    const startedAt = Date.now()
     const quotes = await fetchQuotes(nextSecurities)
+    post({ type: 'METRICS', providerLatencyMs: Date.now() - startedAt })
     post({ type: 'QUOTE_SNAPSHOT', quotes, securityIds: nextSecurities.map(item => item.securityId) })
     if (suppressNextAlerts) suppressNextAlerts = false
     else {
@@ -81,6 +83,7 @@ async function refresh(nextSecurities = securities) {
     }
     post({ type: 'STATUS', status: quotes.length ? currentMonitorStatus() : 'STALE' })
   } catch (error) {
+    post({ type: 'METRICS', providerLatencyMs: null })
     post({ type: 'ERROR', message: error instanceof Error ? error.message : '行情请求失败' })
     post({ type: 'STATUS', status: 'ERROR' })
   }

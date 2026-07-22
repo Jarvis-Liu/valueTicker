@@ -98,7 +98,9 @@ const visibleQuotes = computed(() => {
   })
 })
 const lastUpdatedAt = computed(() => visibleQuotes.value[0]?.updatedAt ?? '待更新')
-const delayedQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'STALE').length)
+const healthyQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'TRADING' && Number.isFinite(quote.price)).length)
+const delayedQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'STALE' || !Number.isFinite(quote.price)).length)
+const quoteHealthPercent = computed(() => configuredQuotes.value.length ? healthyQuoteCount.value / configuredQuotes.value.length * 100 : null)
 const enabledAlertCount = computed(() => configuredQuotes.value.reduce((total, quote) => total + quote.alertCount, 0))
 const coveredAlertSecurityCount = computed(() => configuredQuotes.value.filter(quote => quote.alertCount > 0).length)
 const activeAlertRules = computed(() => activeQuote.value ? userConfigStore.config?.alerts[activeQuote.value.securityId]?.rules ?? [] : [])
@@ -456,7 +458,9 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               :delayed-count="delayedQuoteCount"
               :enabled-alert-count="enabledAlertCount"
               :covered-security-count="coveredAlertSecurityCount"
-              :provider-latency="186"
+              :health-percent="quoteHealthPercent"
+              :provider-latency="marketStore.providerLatencyMs"
+              :monitor-status="marketStore.status"
             />
           </div>
 

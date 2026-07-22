@@ -45,4 +45,5 @@ export type QuoteWorkerResponse
   = | { type: 'QUOTE_SNAPSHOT', quotes: NormalizedQuote[], securityIds: string[] }
     | { type: 'ALERT_TRIGGERED', event: QuoteAlertEvent }
     | { type: 'STATUS', status: MonitorStatus, message?: string }
+    | { type: 'METRICS', providerLatencyMs: number | null }
     | { type: 'ERROR', message: string }

@@ -17,6 +17,7 @@ export function useQuoteMonitor() {
           browserNotifications.notifyAlert(message.event)
         }
         if (message.type === 'STATUS') marketStore.setStatus(message.status, message.message)
+        if (message.type === 'METRICS') marketStore.setProviderLatency(message.providerLatencyMs)
         if (message.type === 'ERROR') marketStore.setStatus('ERROR', message.message)
       }
       worker.value.onerror = (event) => {

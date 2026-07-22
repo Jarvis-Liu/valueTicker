@@ -7,6 +7,7 @@ export const useMarketStore = defineStore('market', () => {
   const status = ref<MonitorStatus>('IDLE')
   const errorMessage = ref('')
   const lastUpdatedAt = ref<string | null>(null)
+  const providerLatencyMs = ref<number | null>(null)
 
   function updateQuotes(nextQuotes: NormalizedQuote[], requestedSecurityIds?: string[]) {
     if (requestedSecurityIds) {
@@ -26,6 +27,10 @@ export const useMarketStore = defineStore('market', () => {
     errorMessage.value = message
   }
 
+  function setProviderLatency(nextLatencyMs: number | null) {
+    providerLatencyMs.value = nextLatencyMs
+  }
+
   function clearQuotes(securityIds: string[]) {
     const removed = new Set(securityIds)
     quotes.value = Object.fromEntries(Object.entries(quotes.value).filter(([securityId]) => !removed.has(securityId)))
@@ -38,7 +43,7 @@ export const useMarketStore = defineStore('market', () => {
     ].slice(0, 20)
   }
 
-  return { quotes, alertNotifications, status, errorMessage, lastUpdatedAt, updateQuotes, setStatus, clearQuotes, addAlertEvent }
+  return { quotes, alertNotifications, status, errorMessage, lastUpdatedAt, providerLatencyMs, updateQuotes, setStatus, setProviderLatency, clearQuotes, addAlertEvent }
 })
 
 function toAlertNotification(event: QuoteAlertEvent): AlertNotification {
