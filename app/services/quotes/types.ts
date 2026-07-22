@@ -35,6 +35,7 @@ export type QuoteWorkerRequest
     | { type: 'PAUSE' }
     | { type: 'RESUME' }
     | { type: 'FORCE_REFRESH' }
+    | { type: 'REFRESH_SECURITIES', securities: SecurityItem[] }
     | { type: 'UPDATE_PROVIDER', provider: QuoteProvider }
     | { type: 'UPDATE_POLLING_INTERVAL', pollingIntervalMs: number }
     | { type: 'UPDATE_SECURITIES', securities: SecurityItem[], provider?: QuoteProvider }

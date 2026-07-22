@@ -15,6 +15,7 @@ import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
 import type { SecurityQuote, WatchGroup } from '~/types/market'
 import type { QuoteProvider } from '~/services/quotes/types'
 import type { AlertRule, SecurityItem } from '~~/shared/types/stock'
+import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
 
 const userConfigStore = useUserConfigStore()
 const marketStore = useMarketStore()
@@ -52,6 +53,7 @@ const activeGroup = ref<WatchGroup | null>(null)
 const deleteConfirmOpen = ref(false)
 const addSecurityOpen = ref(false)
 const removeSecurityConfirmOpen = ref(false)
+const removingSecurity = ref(false)
 const activeSecurity = ref<SecurityQuote | null>(null)
 const transferDialogOpen = ref(false)
 const transferMode = ref<'MOVE' | 'COPY'>('MOVE')
@@ -122,9 +124,7 @@ onMounted(async () => {
   }
 })
 
-const subscriptionSecurities = computed<SecurityItem[]>(() => {
-  return getSubscriptionSecurities(selectedGroupId.value)
-})
+const subscriptionSecurities = computed<SecurityItem[]>(() => getPollingSecurities(userConfigStore.stockGroups))
 
 watch(subscriptionSecurities, (nextSecurities) => {
   if (!monitorStarted) return
@@ -147,7 +147,10 @@ watch(groups, (nextGroups) => {
 })
 
 function selectGroup(groupId: string) {
+  if (selectedGroupId.value === groupId) return
   selectedGroupId.value = groupId
+  // 切换视图是用户主动操作；闭市时允许拉取一次最新快照，但不会恢复自动轮询。
+  if (monitorStarted) quoteMonitor.refreshSecurities(getGroupSecurities(userConfigStore.stockGroups, groupId))
 }
 
 function changeQuoteProvider(provider: QuoteProvider) {
@@ -170,13 +173,6 @@ function saveMonitorSettings(settings: { provider: QuoteProvider, pollingInterva
 
   monitorSettingsOpen.value = false
   showSavedToast(`监测设置已保存：每 ${settings.pollingIntervalMs / 1000} 秒轮询`)
-}
-
-function getSubscriptionSecurities(groupId: string) {
-  const members = groupId === 'all'
-    ? userConfigStore.stockGroups.flatMap(group => group.members)
-    : userConfigStore.stockGroups.find(group => group.id === groupId)?.members ?? []
-  return Array.from(new Map(members.map(member => [member.securityId, member])).values())
 }
 
 function openAlert(quote: SecurityQuote) {
@@ -357,15 +353,23 @@ async function deleteGroup() {
 }
 
 async function removeSecurity() {
-  if (!activeSecurity.value || selectedGroupId.value === 'all') return
+  if (!activeSecurity.value || selectedGroupId.value === 'all' || removingSecurity.value) return
+
+  const groupId = selectedGroupId.value
+  const securityId = activeSecurity.value.securityId
+  removingSecurity.value = true
+  closeRemoveSecurityConfirm()
 
   try {
-    await userConfigStore.deleteMember(selectedGroupId.value, activeSecurity.value.securityId)
-    closeRemoveSecurityConfirm()
+    await userConfigStore.deleteMember(groupId, securityId)
+    // 以持久化结果为准，确保当前分组列表与其他页面修改保持同步。
+    await userConfigStore.loadConfig()
     showSavedToast('证券已从当前分组移除')
   } catch (error) {
     console.error('[ValueTicker] 移除证券失败', error)
     showSavedToast(userConfigStore.errorMessage || '证券移除失败')
+  } finally {
+    removingSecurity.value = false
   }
 }
 
@@ -514,6 +518,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
       title="移除证券"
       :message="`确定要将「${activeSecurity?.name ?? ''}（${activeSecurity?.code ?? ''}）」从当前分组移除吗？`"
       confirm-text="移除证券"
+      :pending="removingSecurity"
       @close="closeRemoveSecurityConfirm"
       @confirm="removeSecurity"
     />

@@ -13,6 +13,7 @@ defineProps<{
   title: string
   message: string
   confirmText?: string
+  pending?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -87,9 +88,10 @@ const emit = defineEmits<{
               <button
                 type="button"
                 class="h-10 flex-1 rounded-xl bg-rose-600 text-xs font-semibold text-white transition hover:bg-rose-700"
+                :disabled="pending"
                 @click="emit('confirm')"
               >
-                {{ confirmText ?? '确认删除' }}
+                {{ pending ? '处理中…' : (confirmText ?? '确认删除') }}
               </button>
             </div>
           </DialogPanel>

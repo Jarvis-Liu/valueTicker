@@ -64,6 +64,9 @@ export function useQuoteMonitor() {
   function forceRefresh() {
     send({ type: 'FORCE_REFRESH' })
   }
+  function refreshSecurities(securities: SecurityItem[]) {
+    send({ type: 'REFRESH_SECURITIES', securities })
+  }
   function stop() {
     if (!worker.value) return
     worker.value.postMessage({ type: 'STOP' } satisfies QuoteWorkerRequest)
@@ -71,7 +74,7 @@ export function useQuoteMonitor() {
     worker.value = null
   }
 
-  return { start, updateSecurities, updateAlerts, updateProvider, updatePollingInterval, pause, resume, forceRefresh, stop }
+  return { start, updateSecurities, updateAlerts, updateProvider, updatePollingInterval, pause, resume, forceRefresh, refreshSecurities, stop }
 }
 
 function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
@@ -83,6 +86,10 @@ function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
       alerts: cloneAlerts(message.alerts),
       pollingIntervalMs: message.pollingIntervalMs
     }
+  }
+
+  if (message.type === 'REFRESH_SECURITIES') {
+    return { type: 'REFRESH_SECURITIES', securities: message.securities.map(toPlainSecurity) }
   }
 
   if (message.type === 'UPDATE_SECURITIES') {
