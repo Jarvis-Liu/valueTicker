@@ -20,7 +20,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mb-4 flex flex-col gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3.5 py-2.5 text-[11px] text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
+  <div class="flex flex-col gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3.5 py-2.5 text-[11px] text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
     <p class="flex items-center gap-2">
       <IconCalendarEvent
         :size="15"

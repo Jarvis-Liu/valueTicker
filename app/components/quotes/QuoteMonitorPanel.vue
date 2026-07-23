@@ -125,9 +125,9 @@ function pad(value: number) {
       </div>
     </div>
 
-    <div class="overflow-x-auto">
+    <div class="max-h-[550px] overflow-auto">
       <table class="w-full min-w-[1060px] border-separate border-spacing-0 text-left">
-        <thead>
+        <thead class="sticky top-0 z-20 bg-white">
           <tr class="text-[11px] font-medium text-slate-400">
             <th class="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3 font-medium">
               证券

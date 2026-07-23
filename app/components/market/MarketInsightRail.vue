@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
-  IconArrowDownRight,
-  IconArrowUpRight,
+  IconTrendingDown,
+  IconTrendingUp,
   IconBellRinging,
   IconChartLine,
   IconClockHour4
@@ -122,11 +122,11 @@ function percent(value: number, total: number) {
             :class="item.up === null ? 'text-slate-400' : item.up ? 'text-rose-600' : 'text-emerald-600'"
             :title="`更新时间：${item.updatedAt}`"
           >
-            <IconArrowUpRight
+            <IconTrendingUp
               v-if="item.up === true"
               :size="15"
             />
-            <IconArrowDownRight
+            <IconTrendingDown
               v-else-if="item.up === false"
               :size="15"
             />
@@ -178,7 +178,7 @@ function percent(value: number, total: number) {
           全部
         </button>
       </div>
-      <div class="divide-y divide-slate-100 px-4">
+      <div class="max-h-[300px] divide-y divide-slate-100 overflow-y-auto px-4">
         <article
           v-for="notice in notifications"
           :key="notice.id"
