@@ -5,11 +5,11 @@ export function getPollingSecurities(groups: StockGroup[], extraSecurities: Secu
 }
 
 /** 当前视图的临时刷新参数；不会影响 Worker 的全量自动订阅。 */
-export function getGroupSecurities(groups: StockGroup[], groupId: string): SecurityItem[] {
+export function getGroupSecurities(groups: StockGroup[], groupId: string, extraSecurities: SecurityItem[] = []): SecurityItem[] {
   const members = groupId === 'all'
     ? groups.flatMap(group => group.members)
     : groups.find(group => group.id === groupId)?.members ?? []
-  return uniqueSecurities(members)
+  return uniqueSecurities([...members, ...extraSecurities])
 }
 
 function uniqueSecurities(securities: SecurityItem[]): SecurityItem[] {

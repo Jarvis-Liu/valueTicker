@@ -1,5 +1,5 @@
 import type { SecurityItem } from '~~/shared/types/stock'
-import { normalizeIntradayTrendPoints } from '../../utils/intraday-trend-normalizer'
+import { createTimelineFromBeticks, normalizeIntradayTrendPoints } from '../../utils/intraday-trend-normalizer'
 import type { IntradayTrendPoint, SecurityIntradayTrend } from './types'
 
 const ENDPOINT = 'https://push2.eastmoney.com/api/qt/stock/trends2/get'
@@ -22,7 +22,9 @@ export async function fetchEastmoneyIntradayTrend(security: SecurityItem): Promi
     const payload = await response.json() as EastmoneyTrendResponse
     if (payload.rc !== 0 || !payload.data) throw new Error(`东财分时接口返回错误码 ${payload.rc}`)
 
-    const points = normalizeIntradayTrendPoints((payload.data.trends ?? []).map(parseTrendPoint).filter((point): point is IntradayTrendPoint => point !== null))
+    const rawPoints = (payload.data.trends ?? []).map(parseTrendPoint).filter((point): point is IntradayTrendPoint => point !== null)
+    const customTimeline = shouldUseProviderTimeline(security) ? createTimelineFromBeticks(payload.data.beticks) : null
+    const points = normalizeIntradayTrendPoints(rawPoints, customTimeline ? { timeline: customTimeline, foldAfternoonOpen: false } : undefined)
 
     return {
       securityId: security.securityId,
@@ -39,7 +41,11 @@ export async function fetchEastmoneyIntradayTrend(security: SecurityItem): Promi
 }
 
 function toEastmoneySecId(security: SecurityItem) {
-  return `${security.exchange === 'SSE' ? '1' : '0'}.${security.code}`
+  return security.providerSymbols.eastmoney ?? `${security.exchange === 'SSE' ? '1' : '0'}.${security.code}`
+}
+
+function shouldUseProviderTimeline(security: SecurityItem) {
+  return security.providerSymbols.eastmoney?.startsWith('100.') === true
 }
 
 function parseTrendPoint(value: string): IntradayTrendPoint | null {
@@ -51,9 +57,9 @@ function parseTrendPoint(value: string): IntradayTrendPoint | null {
   return {
     time,
     price,
-    averagePrice: number(fields[2]),
-    volume: number(fields[3]),
-    amount: number(fields[4])
+    averagePrice: number(fields[7]),
+    volume: number(fields[5]),
+    amount: number(fields[6])
   }
 }
 
@@ -75,6 +81,7 @@ interface EastmoneyTrendResponse {
   rc: number
   data?: {
     preClose?: number | string
+    beticks?: string
     trends?: string[]
   }
 }

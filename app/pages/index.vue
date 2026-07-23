@@ -135,7 +135,7 @@ onMounted(async () => {
 })
 
 const subscriptionSecurities = computed<SecurityItem[]>(() => getPollingSecurities(userConfigStore.stockGroups, MARKET_INDEX_SECURITIES))
-const trendSecurities = computed<SecurityItem[]>(() => getGroupSecurities(userConfigStore.stockGroups, selectedGroupId.value))
+const trendSecurities = computed<SecurityItem[]>(() => getGroupSecurities(userConfigStore.stockGroups, selectedGroupId.value, MARKET_INDEX_SECURITIES))
 
 watch(subscriptionSecurities, (nextSecurities) => {
   if (!monitorStarted) return
@@ -497,6 +497,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
             <MarketInsightRail
               :notifications="marketStore.alertNotifications"
               :index-quotes="marketIndexQuotes"
+              :index-trends="marketStore.intradayTrends"
               :watchlist-quotes="configuredQuotes"
             />
           </div>

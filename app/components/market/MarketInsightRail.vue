@@ -7,12 +7,14 @@ import {
   IconClockHour4
 } from '@tabler/icons-vue'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
-import type { NormalizedQuote } from '~/services/quotes/types'
+import IntradayTrendSparkline from '~/components/quotes/IntradayTrendSparkline.vue'
+import type { NormalizedQuote, SecurityIntradayTrend } from '~/services/quotes/types'
 import type { AlertNotification, SecurityQuote } from '~/types/market'
 
 const props = defineProps<{
   notifications: AlertNotification[]
   indexQuotes: NormalizedQuote[]
+  indexTrends: Record<string, SecurityIntradayTrend>
   watchlistQuotes: SecurityQuote[]
 }>()
 
@@ -94,7 +96,7 @@ function percent(value: number, total: number) {
               市场概览
             </h2>
             <p class="mt-0.5 text-[10px] text-slate-400">
-              A 股主要指数
+              以A股交易时间自动更新
             </p>
           </div>
         </div>
@@ -107,7 +109,7 @@ function percent(value: number, total: number) {
         <div
           v-for="item in indices"
           :key="item.securityId"
-          class="flex items-center justify-between py-3.5"
+          class="grid grid-cols-[minmax(0,1fr)_96px_auto] items-center gap-3 py-3.5"
         >
           <div>
             <p class="text-xs text-slate-500">
@@ -117,8 +119,9 @@ function percent(value: number, total: number) {
               {{ item.value }}
             </p>
           </div>
+          <IntradayTrendSparkline :trend="props.indexTrends[item.securityId]" />
           <span
-            class="inline-flex items-center gap-0.5 text-xs font-semibold tabular-number"
+            class="inline-flex min-w-[58px] items-center justify-end gap-0.5 text-xs font-semibold tabular-number"
             :class="item.up === null ? 'text-slate-400' : item.up ? 'text-rose-600' : 'text-emerald-600'"
             :title="`更新时间：${item.updatedAt}`"
           >

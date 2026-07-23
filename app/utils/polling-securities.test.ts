@@ -36,7 +36,8 @@ describe('polling securities', () => {
       'SSE:000001',
       'SZSE:399001',
       'SZSE:399006',
-      'SSE:000688'
+      'SSE:000688',
+      'KOSPI:KS11'
     ])
   })
 

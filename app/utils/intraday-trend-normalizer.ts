@@ -1,16 +1,22 @@
 import type { IntradayTrendPoint } from '~/services/quotes/types'
 
 export const INTRADAY_TICK_COUNT = 241
-export const INTRADAY_TIMELINE = createIntradayTimeline()
+export const INTRADAY_TIMELINE = createAShareIntradayTimeline()
 
-const INTRADAY_TIMELINE_SET = new Set(INTRADAY_TIMELINE)
+export interface IntradayTrendNormalizeOptions {
+  timeline?: string[]
+  foldAfternoonOpen?: boolean
+}
 
-export function normalizeIntradayTrendPoints(points: IntradayTrendPoint[]): IntradayTrendPoint[] {
+export function normalizeIntradayTrendPoints(points: IntradayTrendPoint[], options: IntradayTrendNormalizeOptions = {}): IntradayTrendPoint[] {
+  const timeline = options.timeline?.length ? options.timeline : INTRADAY_TIMELINE
+  const timelineSet = new Set(timeline)
+  const foldAfternoonOpen = options.foldAfternoonOpen ?? timeline === INTRADAY_TIMELINE
   const pointsByMinute = new Map<string, IntradayTrendPoint>()
 
   for (const point of points) {
-    const minute = normalizeTrendMinute(point.time)
-    if (!minute || !INTRADAY_TIMELINE_SET.has(minute)) continue
+    const minute = normalizeTrendMinute(point.time, foldAfternoonOpen)
+    if (!minute || !timelineSet.has(minute)) continue
     pointsByMinute.set(minute, {
       time: minute,
       price: finiteOrNull(point.price),
@@ -20,10 +26,28 @@ export function normalizeIntradayTrendPoints(points: IntradayTrendPoint[]): Intr
     })
   }
 
-  return INTRADAY_TIMELINE.map((time) => pointsByMinute.get(time) ?? createEmptyTrendPoint(time))
+  return timeline.map((time) => pointsByMinute.get(time) ?? createEmptyTrendPoint(time))
 }
 
-function createIntradayTimeline(): string[] {
+export function createContinuousIntradayTimeline(start: string, end: string): string[] {
+  return createMinuteRange(start, end)
+}
+
+export function createTimelineFromBeticks(value: string | undefined): string[] | null {
+  const seconds = (value ?? '')
+    .split('|')
+    .map(part => Number(part))
+    .filter(Number.isFinite)
+
+  if (seconds.length < 2) return null
+  const start = Math.min(...seconds)
+  const end = Math.max(...seconds)
+  if (start < 0 || end <= start) return null
+
+  return createContinuousIntradayTimeline(formatMinuteOfDay(Math.floor(start / 60)), formatMinuteOfDay(Math.floor(end / 60)))
+}
+
+function createAShareIntradayTimeline(): string[] {
   const morning = createMinuteRange('09:30', '11:30')
   // A-share minute charts use 241 ticks. Keeping 15:00 means the afternoon axis starts at 13:01;
   // provider data reported at 13:00 is folded onto that first afternoon tick below.
@@ -44,7 +68,7 @@ function createMinuteRange(start: string, end: string): string[] {
   return result
 }
 
-function normalizeTrendMinute(value: string) {
+function normalizeTrendMinute(value: string, foldAfternoonOpen: boolean) {
   const matched = value.match(/(?:^|\s)(\d{2}):(\d{2})(?::\d{2})?$/) ?? value.match(/(\d{2})(\d{2})$/)
   if (!matched) return null
 
@@ -53,7 +77,7 @@ function normalizeTrendMinute(value: string) {
   if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour > 23 || minute > 59) return null
 
   const normalized = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-  if (normalized === '13:00') return '13:01'
+  if (foldAfternoonOpen && normalized === '13:00') return '13:01'
   return normalized
 }
 

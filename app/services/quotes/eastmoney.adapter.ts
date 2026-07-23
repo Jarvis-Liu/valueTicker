@@ -22,9 +22,10 @@ async function fetchBatch(securities: SecurityItem[]): Promise<NormalizedQuote[]
 
   try {
     const url = new URL(ENDPOINT)
+    const securitiesBySecId = new Map(securities.map(security => [toEastmoneySecId(security), security] as const))
     url.searchParams.set('fltt', '2')
     url.searchParams.set('fields', FIELDS)
-    url.searchParams.set('secids', securities.map(toEastmoneySecId).join(','))
+    url.searchParams.set('secids', Array.from(securitiesBySecId.keys()).join(','))
 
     const response = await fetch(url, { signal: controller.signal })
     if (!response.ok) throw new Error(`东财行情接口返回 HTTP ${response.status}`)
@@ -33,7 +34,7 @@ async function fetchBatch(securities: SecurityItem[]): Promise<NormalizedQuote[]
     if (payload.rc !== 0) throw new Error(`东财行情接口返回错误码 ${payload.rc}`)
 
     return (payload.data?.diff ?? [])
-      .map(convertEastmoneyQuote)
+      .map(item => convertEastmoneyQuote(item, securitiesBySecId))
       .filter((quote): quote is NormalizedQuote => quote !== null)
   } finally {
     clearTimeout(timeout)
@@ -41,15 +42,18 @@ async function fetchBatch(securities: SecurityItem[]): Promise<NormalizedQuote[]
 }
 
 function toEastmoneySecId(security: SecurityItem) {
+  if (security.providerSymbols.eastmoney) return security.providerSymbols.eastmoney
   const market = security.exchange === 'SSE' ? '1' : '0'
   return `${market}.${security.code}`
 }
 
-function convertEastmoneyQuote(item: EastmoneyQuoteItem): NormalizedQuote | null {
+function convertEastmoneyQuote(item: EastmoneyQuoteItem, securitiesBySecId: Map<string, SecurityItem>): NormalizedQuote | null {
   const code = String(item.f12 ?? '')
-  if (!/^\d{6}$/.test(code)) return null
+  const secid = `${item.f13 ?? ''}.${code}`
+  const sourceSecurity = securitiesBySecId.get(secid)
+  if (!sourceSecurity && !/^\d{6}$/.test(code)) return null
 
-  const exchange = item.f13 === 1 ? 'SSE' : code.startsWith('9') ? 'BSE' : 'SZSE'
+  const exchange = sourceSecurity?.exchange ?? (item.f13 === 1 ? 'SSE' : code.startsWith('9') ? 'BSE' : 'SZSE')
   const price = number(item.f2)
   const previousClose = number(item.f18)
   const change = number(item.f4)
@@ -58,7 +62,7 @@ function convertEastmoneyQuote(item: EastmoneyQuoteItem): NormalizedQuote | null
   if (!Number.isFinite(price)) return null
 
   return {
-    securityId: `${exchange}:${code}`,
+    securityId: sourceSecurity?.securityId ?? `${exchange}:${code}`,
     price,
     change: Number.isFinite(change) ? change : Number.isFinite(previousClose) ? price - previousClose : Number.NaN,
     changePercent,
@@ -71,9 +75,9 @@ function convertEastmoneyQuote(item: EastmoneyQuoteItem): NormalizedQuote | null
     previousClose,
     totalMarketValue: number(item.f20),
     peTtm: number(item.f114),
-    providerCode: code,
+    providerCode: sourceSecurity?.code ?? code,
     providerMarket: item.f13 ?? Number.NaN,
-    providerName: item.f14 ?? '',
+    providerName: sourceSecurity?.name ?? item.f14 ?? '',
     updatedAt: formatLocalDateTime(new Date()),
     status: 'TRADING',
     provider: 'EASTMONEY'

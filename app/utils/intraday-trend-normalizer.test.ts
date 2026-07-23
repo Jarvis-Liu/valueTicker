@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { INTRADAY_TICK_COUNT, INTRADAY_TIMELINE, normalizeIntradayTrendPoints } from './intraday-trend-normalizer'
+import { INTRADAY_TICK_COUNT, INTRADAY_TIMELINE, createTimelineFromBeticks, normalizeIntradayTrendPoints } from './intraday-trend-normalizer'
 import type { IntradayTrendPoint } from '~/services/quotes/types'
 
 function point(time: string, price: number): IntradayTrendPoint {
@@ -15,6 +15,23 @@ describe('intraday trend normalizer', () => {
     expect(INTRADAY_TIMELINE.at(-1)).toBe('15:00')
   })
 
+
+  it('supports Eastmoney overseas index timelines from beticks', () => {
+    const timeline = createTimelineFromBeticks('28800|28800|52200|28800|52200')
+    expect(timeline).toHaveLength(391)
+    expect(timeline?.[0]).toBe('08:00')
+    expect(timeline?.at(-1)).toBe('14:30')
+
+    const result = normalizeIntradayTrendPoints([
+      point('2026-07-23 08:00', 6963.35),
+      point('2026-07-23 09:25', 6980.12),
+      point('2026-07-23 14:30', 7012.34)
+    ], { timeline: timeline ?? [], foldAfternoonOpen: false })
+
+    expect(result[0]).toMatchObject({ time: '08:00', price: 6963.35 })
+    expect(result[85]).toMatchObject({ time: '09:25', price: 6980.12 })
+    expect(result.at(-1)).toMatchObject({ time: '14:30', price: 7012.34 })
+  })
   it('filters pre-open and lunch-break points and keeps future ticks empty', () => {
     const result = normalizeIntradayTrendPoints([
       point('2026-07-23 09:25', 9.9),
