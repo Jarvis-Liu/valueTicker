@@ -1,4 +1,5 @@
 import type { SecurityItem } from '~~/shared/types/stock'
+import { normalizeIntradayTrendPoints } from '../../utils/intraday-trend-normalizer'
 import type { IntradayTrendPoint, SecurityIntradayTrend } from './types'
 
 const ENDPOINT = 'https://web.ifzq.gtimg.cn/appstock/app/minute/query'
@@ -25,11 +26,13 @@ export async function fetchTencentIntradayTrend(security: SecurityItem): Promise
 
     const date = trendData.data?.date ?? trendData.date ?? ''
     const snapshot = trendData.qt?.[symbol] ?? []
+    const points = normalizeIntradayTrendPoints((trendData.data?.data ?? []).map(value => parseTrendPoint(value, date)).filter((point): point is IntradayTrendPoint => point !== null))
+
     return {
       securityId: security.securityId,
       previousClose: number(snapshot[4]),
-      openingPrice: number(snapshot[5]),
-      points: (trendData.data?.data ?? []).map(value => parseTrendPoint(value, date)).filter((point): point is IntradayTrendPoint => point !== null),
+      openingPrice: firstFinitePrice(points),
+      points,
       updatedAt: formatTencentDateTime(snapshot[29]),
       provider: 'TENCENT',
       status: 'READY'
@@ -55,6 +58,10 @@ function parseTrendPoint(value: string, date: string): IntradayTrendPoint | null
     volume,
     amount
   }
+}
+
+function firstFinitePrice(points: IntradayTrendPoint[]) {
+  return points.find(point => Number.isFinite(point.price))?.price ?? Number.NaN
 }
 
 function formatPointTime(date: string, time: string) {

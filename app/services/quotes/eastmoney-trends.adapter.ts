@@ -1,4 +1,5 @@
 import type { SecurityItem } from '~~/shared/types/stock'
+import { normalizeIntradayTrendPoints } from '../../utils/intraday-trend-normalizer'
 import type { IntradayTrendPoint, SecurityIntradayTrend } from './types'
 
 const ENDPOINT = 'https://push2.eastmoney.com/api/qt/stock/trends2/get'
@@ -21,11 +22,13 @@ export async function fetchEastmoneyIntradayTrend(security: SecurityItem): Promi
     const payload = await response.json() as EastmoneyTrendResponse
     if (payload.rc !== 0 || !payload.data) throw new Error(`东财分时接口返回错误码 ${payload.rc}`)
 
+    const points = normalizeIntradayTrendPoints((payload.data.trends ?? []).map(parseTrendPoint).filter((point): point is IntradayTrendPoint => point !== null))
+
     return {
       securityId: security.securityId,
       previousClose: number(payload.data.preClose),
-      openingPrice: number(payload.data.trends?.[0]?.split(',')[7]),
-      points: (payload.data.trends ?? []).map(parseTrendPoint).filter((point): point is IntradayTrendPoint => point !== null),
+      openingPrice: firstFinitePrice(points),
+      points,
       updatedAt: formatLocalDateTime(new Date()),
       provider: 'EASTMONEY',
       status: 'READY'
@@ -52,6 +55,10 @@ function parseTrendPoint(value: string): IntradayTrendPoint | null {
     volume: number(fields[3]),
     amount: number(fields[4])
   }
+}
+
+function firstFinitePrice(points: IntradayTrendPoint[]) {
+  return points.find(point => Number.isFinite(point.price))?.price ?? Number.NaN
 }
 
 function number(value: number | string | undefined) {

@@ -27,10 +27,10 @@ export interface NormalizedQuote {
 
 export interface IntradayTrendPoint {
   time: string
-  price: number
-  averagePrice: number
-  volume: number
-  amount: number
+  price: number | null
+  averagePrice: number | null
+  volume: number | null
+  amount: number | null
 }
 
 export interface SecurityIntradayTrend {

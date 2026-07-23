@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SecurityIntradayTrend } from '~/services/quotes/types'
+import type { IntradayTrendPoint, SecurityIntradayTrend } from '~/services/quotes/types'
 
 const props = defineProps<{
   trend?: SecurityIntradayTrend
@@ -13,40 +13,52 @@ const showAverageLine = false
 
 const chartData = computed(() => {
   const points = props.trend?.points ?? []
-  const prices = points.map(point => point.price).filter(Number.isFinite)
+  const prices = points.map(point => point.price).filter(isFiniteNumber)
   if (!prices.length) return null
 
-  const reference = Number.isFinite(props.trend?.openingPrice) ? props.trend!.openingPrice : prices[0]!
+  const reference = Number.isFinite(props.trend?.previousClose) ? props.trend!.previousClose : prices[0]!
   const averagePrices = showAverageLine && props.trend?.provider === 'EASTMONEY'
-    ? points.map(point => point.averagePrice).filter(Number.isFinite)
+    ? points.map(point => point.averagePrice).filter(isFiniteNumber)
     : []
   const distance = Math.max(...[...prices, ...averagePrices].map(price => Math.abs(price - reference)), 0.01)
   const usableWidth = chartWidth - padding * 2
   const usableHeight = chartHeight - padding * 2
-  const toX = (index: number) => padding + (points.length === 1 ? usableWidth / 2 : index / (points.length - 1) * usableWidth)
+  const toX = (index: number) => padding + (points.length <= 1 ? usableWidth / 2 : index / (points.length - 1) * usableWidth)
   const toY = (price: number) => padding + (distance - (price - reference)) / (distance * 2) * usableHeight
 
   const toPolyline = (value: 'price' | 'averagePrice') => points
     .map((point, index) => ({ index, value: point[value] }))
-    .filter((point): point is { index: number, value: number } => Number.isFinite(point.value))
+    .filter((point): point is { index: number, value: number } => isFiniteNumber(point.value))
     .map(point => `${toX(point.index).toFixed(2)},${toY(point.value).toFixed(2)}`)
     .join(' ')
 
   return {
     pricePoints: toPolyline('price'),
     averagePoints: showAverageLine && props.trend?.provider === 'EASTMONEY' ? toPolyline('averagePrice') : '',
-    openingPriceY: toY(reference)
+    previousCloseY: toY(reference)
   }
 })
 
 const toneClass = computed(() => {
   const trend = props.trend
-  const lastPrice = trend?.points.at(-1)?.price ?? Number.NaN
+  const lastPrice = lastFinitePrice(trend?.points ?? [])
   if (!trend || !Number.isFinite(lastPrice) || !Number.isFinite(trend.previousClose)) return 'text-slate-300'
   if (lastPrice > trend.previousClose) return 'text-rose-500'
   if (lastPrice < trend.previousClose) return 'text-emerald-500'
   return 'text-slate-400'
 })
+
+function isFiniteNumber(value: number | null | undefined): value is number {
+  return Number.isFinite(value)
+}
+
+function lastFinitePrice(points: IntradayTrendPoint[]) {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const price = points[index]?.price
+    if (isFiniteNumber(price)) return price
+  }
+  return Number.NaN
+}
 </script>
 
 <template>
@@ -60,9 +72,9 @@ const toneClass = computed(() => {
     >
       <line
         x1="0"
-        :y1="chartData.openingPriceY"
+        :y1="chartData.previousCloseY"
         :x2="chartWidth"
-        :y2="chartData.openingPriceY"
+        :y2="chartData.previousCloseY"
         class="stroke-slate-200"
         stroke-dasharray="2 2"
       />
