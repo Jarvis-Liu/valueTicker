@@ -444,6 +444,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         @provider-change="changeQuoteProvider"
         @toggle="toggleMonitor"
         @refresh="refresh"
+        @settings="monitorSettingsOpen = true"
       />
       <div class="border-b border-slate-200/70 bg-[#f3f6f4]/95 shadow-sm backdrop-blur">
         <div class="mx-auto max-w-[1680px] px-3 py-3 sm:px-6">

@@ -5,9 +5,10 @@ import {
   IconChevronDown,
   IconPlayerPause,
   IconPlayerPlay,
-  IconRefresh
+  IconRefresh,
+  IconSettings
 } from '@tabler/icons-vue'
-import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/vue'
+import { Listbox, ListboxButton, ListboxOption, ListboxOptions, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import type { MonitorStatus, QuoteProvider } from '~/services/quotes/types'
 
 const props = defineProps<{
@@ -22,6 +23,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggle: []
   refresh: []
+  settings: []
   providerChange: [provider: QuoteProvider]
 }>()
 
@@ -179,13 +181,42 @@ function changeProvider(provider: QuoteProvider) {
           <IconBell :size="19" />
           <span class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-[#0b2420] bg-rose-400" />
         </button>
-        <button
-          type="button"
-          class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-slate-100 to-slate-300 text-xs font-bold text-slate-700"
-          aria-label="用户菜单"
+        <Menu
+          as="div"
+          class="relative"
         >
-          VT
-        </button>
+          <MenuButton
+            class="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-slate-100 to-slate-300 text-xs font-bold text-slate-700 outline-none ring-offset-2 ring-offset-[#0b2420] transition hover:from-white hover:to-slate-200 focus-visible:ring-2 focus-visible:ring-emerald-300"
+            aria-label="用户菜单"
+          >
+            VT
+          </MenuButton>
+          <Transition
+            enter-active-class="transition duration-150 ease-out"
+            enter-from-class="translate-y-1 opacity-0"
+            enter-to-class="translate-y-0 opacity-100"
+            leave-active-class="transition duration-100 ease-in"
+            leave-from-class="translate-y-0 opacity-100"
+            leave-to-class="translate-y-1 opacity-0"
+          >
+            <MenuItems class="absolute right-0 top-[calc(100%+10px)] z-[90] w-40 origin-top-right overflow-hidden rounded-2xl border border-emerald-300/15 bg-[#102f2a] p-1 shadow-2xl shadow-slate-950/35 outline-none ring-1 ring-white/5">
+              <MenuItem v-slot="{ active }">
+                <button
+                  type="button"
+                  class="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-emerald-50/85 transition"
+                  :class="active && 'bg-emerald-300/12 text-white'"
+                  @click="$emit('settings')"
+                >
+                  <IconSettings
+                    :size="16"
+                    class="text-emerald-200"
+                  />
+                  监测设置
+                </button>
+              </MenuItem>
+            </MenuItems>
+          </Transition>
+        </Menu>
       </div>
     </div>
   </header>
