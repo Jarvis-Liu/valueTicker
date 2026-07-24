@@ -1,5 +1,4 @@
 import { fetchEastmoneyQuotes } from '../services/quotes/eastmoney.adapter'
-import { fetchEastmoneyIntradayTrend } from '../services/quotes/eastmoney-trends.adapter'
 import { fetchTencentQuotes } from '../services/quotes/tencent.adapter'
 import { fetchTencentIntradayTrend } from '../services/quotes/tencent-trends.adapter'
 import { evaluateQuoteAlerts } from '../utils/alert-engine'
@@ -204,9 +203,8 @@ function fetchQuotes(nextSecurities: SecurityItem[]) {
 }
 
 function fetchIntradayTrend(security: SecurityItem) {
-  return provider === 'TENCENT'
-    ? fetchTencentIntradayTrend(security)
-    : fetchEastmoneyIntradayTrend(security)
+  // 东财分时接口存在权限/Cookie 不稳定问题；趋势图统一走腾讯接口，主行情 Provider 切换不影响趋势源。
+  return fetchTencentIntradayTrend(security)
 }
 
 function hasSameSecurityIds(left: SecurityItem[], right: SecurityItem[]) {
