@@ -56,7 +56,11 @@ export const useMarketStore = defineStore('market', () => {
     ].slice(0, 20)
   }
 
-  return { quotes, intradayTrends, alertNotifications, status, errorMessage, lastUpdatedAt, providerLatencyMs, updateQuotes, updateTrends, setStatus, setProviderLatency, clearQuotes, addAlertEvent }
+  function clearAlertNotifications() {
+    alertNotifications.value = []
+  }
+
+  return { quotes, intradayTrends, alertNotifications, status, errorMessage, lastUpdatedAt, providerLatencyMs, updateQuotes, updateTrends, setStatus, setProviderLatency, clearQuotes, addAlertEvent, clearAlertNotifications }
 })
 
 function toAlertNotification(event: QuoteAlertEvent): AlertNotification {

@@ -64,14 +64,15 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
     const securitiesChanged = !hasSameSecurityIds(trendSecurities, message.securities)
     trendSecurities = message.securities
     if (securitiesChanged) trendRequestVersion += 1
-    if (windowActive && isContinuousAuction()) await refreshTrends()
+    // 首次进入或切换分组属于主动请求：休市也拉取一次当日分时；后续自动刷新仍只在连续竞价时段执行。
+    if (running && windowActive) await refreshTrends(true)
     scheduleTrends()
     return
   }
 
   if (message.type === 'UPDATE_WINDOW_ACTIVITY') {
     windowActive = message.active
-    trendRequestVersion += 1
+    // 活跃状态仅影响自动轮询；不能废弃进入页面时已发出的强制趋势请求。
     if (windowActive && isContinuousAuction()) await refreshTrends()
     scheduleTrends()
     return

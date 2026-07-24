@@ -18,6 +18,12 @@ const props = defineProps<{
   watchlistQuotes: SecurityQuote[]
 }>()
 
+const emit = defineEmits<{
+  clearNotifications: []
+}>()
+
+const notificationCountLabel = computed(() => props.notifications.length >= 20 ? '20+' : String(props.notifications.length))
+
 const indices = computed(() => {
   const quotesById = new Map(props.indexQuotes.map(quote => [quote.securityId, quote]))
   return MARKET_INDEX_SECURITIES.map((security) => {
@@ -170,15 +176,17 @@ function percent(value: number, total: number) {
               提醒动态
             </h2>
             <p class="mt-0.5 text-[10px] text-slate-400">
-              今日已触发 {{ notifications.length }} 次
+              今日已触发 {{ notificationCountLabel }} 次
             </p>
           </div>
         </div>
         <button
           type="button"
-          class="text-[11px] font-medium text-emerald-700 hover:text-emerald-900"
+          class="text-[11px] font-medium text-emerald-700 hover:text-emerald-900 disabled:cursor-not-allowed disabled:text-slate-300"
+          :disabled="notifications.length === 0"
+          @click="emit('clearNotifications')"
         >
-          全部
+          清空
         </button>
       </div>
       <div class="max-h-[300px] divide-y divide-slate-100 overflow-y-auto px-4">

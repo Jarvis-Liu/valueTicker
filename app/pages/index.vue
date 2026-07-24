@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { IconCircleCheck } from '@tabler/icons-vue'
+import AlertNotificationsDialog from '~/components/alerts/AlertNotificationsDialog.vue'
 import AlertRuleDrawer from '~/components/alerts/AlertRuleDrawer.vue'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import GroupFormDialog from '~/components/groups/GroupFormDialog.vue'
@@ -44,6 +45,8 @@ const search = ref('')
 const paused = ref(false)
 const refreshing = ref(false)
 const alertOpen = ref(false)
+const alertNotificationsOpen = ref(false)
+const clearAlertNotificationsConfirmOpen = ref(false)
 const activeQuote = ref<SecurityQuote | null>(null)
 const savedToast = ref(false)
 const toastMessage = ref('操作已完成')
@@ -237,6 +240,16 @@ function showSavedToast(message = '操作已完成') {
   window.setTimeout(() => {
     savedToast.value = false
   }, 2200)
+}
+
+async function requestClearAlertNotifications() {
+  if (marketStore.alertNotifications.length > 0) clearAlertNotificationsConfirmOpen.value = true
+}
+
+function clearAlertNotifications() {
+  marketStore.clearAlertNotifications()
+  clearAlertNotificationsConfirmOpen.value = false
+  showSavedToast('站内提醒已清空')
 }
 
 async function saveAlertRules(rules: AlertRule[]) {
@@ -440,11 +453,13 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         :polling-interval-ms="pollingIntervalMs"
         :refreshing="refreshing"
         :last-updated-at="lastUpdatedAt"
+        :notification-count="marketStore.alertNotifications.length"
         :status="marketStore.status"
         @provider-change="changeQuoteProvider"
         @toggle="toggleMonitor"
         @refresh="refresh"
         @settings="monitorSettingsOpen = true"
+        @notifications="alertNotificationsOpen = true"
       />
       <div class="border-b border-slate-200/70 bg-[#f3f6f4]/95 shadow-sm backdrop-blur">
         <div class="mx-auto max-w-[1680px] px-3 py-3 sm:px-6">
@@ -500,11 +515,19 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               :index-quotes="marketIndexQuotes"
               :index-trends="marketStore.intradayTrends"
               :watchlist-quotes="configuredQuotes"
+              @clear-notifications="requestClearAlertNotifications"
             />
           </div>
         </div>
       </div>
     </main>
+
+    <AlertNotificationsDialog
+      :open="alertNotificationsOpen"
+      :notifications="marketStore.alertNotifications"
+      @close="alertNotificationsOpen = false"
+      @clear="requestClearAlertNotifications"
+    />
 
     <AlertRuleDrawer
       :open="alertOpen"
@@ -538,6 +561,15 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
       :existing-security-ids="addTargetSecurityIds"
       @close="addSecurityOpen = false"
       @select="addSecurity"
+    />
+
+    <ConfirmDialog
+      :open="clearAlertNotificationsConfirmOpen"
+      title="清空站内提醒"
+      message="确定清空当前页面会话内的提醒记录吗？此操作不会撤回已发送的系统通知。"
+      confirm-text="清空提醒"
+      @close="clearAlertNotificationsConfirmOpen = false"
+      @confirm="clearAlertNotifications"
     />
 
     <ConfirmDialog

@@ -18,12 +18,14 @@ const props = defineProps<{
   provider: QuoteProvider
   pollingIntervalMs: number
   lastUpdatedAt: string
+  notificationCount: number
 }>()
 
 const emit = defineEmits<{
   toggle: []
   refresh: []
   settings: []
+  notifications: []
   providerChange: [provider: QuoteProvider]
 }>()
 
@@ -177,9 +179,13 @@ function changeProvider(provider: QuoteProvider) {
           type="button"
           class="relative grid h-9 w-9 place-items-center rounded-xl text-slate-300 transition hover:bg-white/10 hover:text-white"
           aria-label="查看通知"
+          @click="$emit('notifications')"
         >
           <IconBell :size="19" />
-          <span class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-[#0b2420] bg-rose-400" />
+          <span
+            v-if="notificationCount > 0"
+            class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-[#0b2420] bg-rose-400"
+          />
         </button>
         <Menu
           as="div"
@@ -200,6 +206,25 @@ function changeProvider(provider: QuoteProvider) {
             leave-to-class="translate-y-1 opacity-0"
           >
             <MenuItems class="absolute right-0 top-[calc(100%+10px)] z-[90] w-40 origin-top-right overflow-hidden rounded-2xl border border-emerald-300/15 bg-[#102f2a] p-1 shadow-2xl shadow-slate-950/35 outline-none ring-1 ring-white/5">
+              <MenuItem
+                v-slot="{ active }"
+                :disabled="refreshing"
+              >
+                <button
+                  type="button"
+                  class="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-emerald-50/85 transition disabled:cursor-not-allowed disabled:opacity-55"
+                  :class="active && !refreshing && 'bg-emerald-300/12 text-white'"
+                  :disabled="refreshing"
+                  @click="$emit('refresh')"
+                >
+                  <IconRefresh
+                    :size="16"
+                    class="text-emerald-200"
+                    :class="refreshing && 'animate-spin'"
+                  />
+                  {{ refreshing ? '刷新中' : '手动刷新' }}
+                </button>
+              </MenuItem>
               <MenuItem v-slot="{ active }">
                 <button
                   type="button"
