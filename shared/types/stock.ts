@@ -32,6 +32,17 @@ export interface StockGroup {
   members: StockGroupMember[]
 }
 
+/** 可跨设备导入、导出的自选分组文件格式（不包含本地 ID、版本与提醒设置）。 */
+export interface StockGroupsExportFile {
+  version: 1
+  exportedAt: string
+  groups: Array<{
+    name: string
+    isDefault?: boolean
+    members: SecurityItem[]
+  }>
+}
+
 export interface AlertRule {
   type: AlertRuleType
   enabled: boolean

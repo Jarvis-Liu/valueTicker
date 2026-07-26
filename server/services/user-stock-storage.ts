@@ -9,6 +9,7 @@ import {
 import {
   addStockMemberPayloadSchema,
   createStockGroupPayloadSchema,
+  stockGroupsExportFileSchema,
   transferStockMemberPayloadSchema,
   updateStockAlertsPayloadSchema,
   updateStockGroupPayloadSchema,
@@ -17,16 +18,17 @@ import {
 import type {
   AddStockMemberPayload,
   CreateStockGroupPayload,
+  StockGroupsExportFilePayload,
   TransferStockMemberPayload,
   UpdateStockAlertsPayload,
   UpdateStockGroupPayload
 } from '~~/shared/schemas/stock-config'
 import type { ApiErrorCode } from '~~/shared/types/api'
-import type { UserStockConfig } from '~~/shared/types/stock'
+import type { StockGroup, UserStockConfig } from '~~/shared/types/stock'
 import { ApiResponseError } from '~~/server/utils/api-response'
 import { getRedisClient } from '~~/server/utils/redis'
 
-type Operation = 'READ' | 'CREATE_GROUP' | 'RENAME_GROUP' | 'DELETE_GROUP' | 'ADD_MEMBER' | 'DELETE_MEMBER' | 'TRANSFER_MEMBER' | 'UPDATE_ALERTS'
+type Operation = 'READ' | 'CREATE_GROUP' | 'RENAME_GROUP' | 'DELETE_GROUP' | 'ADD_MEMBER' | 'DELETE_MEMBER' | 'TRANSFER_MEMBER' | 'UPDATE_ALERTS' | 'REPLACE_GROUPS'
 
 type RedisEvaluator = {
   eval: (script: string, keys: string[], args: string[]) => Promise<unknown>
@@ -210,6 +212,22 @@ if ARGV[2] == 'UPDATE_ALERTS' then
   return persist({alerts = alerts})
 end
 
+if ARGV[2] == 'REPLACE_GROUPS' then
+  config.groups = payload.groups
+  local activeSecurityIds = {}
+  for _, item in ipairs(config.groups) do
+    for _, member in ipairs(item.members) do
+      activeSecurityIds[member.securityId] = true
+    end
+  end
+  local retainedAlerts = {}
+  for securityId, alerts in pairs(config.alerts) do
+    if activeSecurityIds[securityId] then retainedAlerts[securityId] = alerts end
+  end
+  config.alerts = retainedAlerts
+  return persist({groups = config.groups})
+end
+
 local groupIndex = findGroupIndex(payload.groupId)
 if not groupIndex then return cjson.encode({status = 'ERROR', code = 'GROUP_NOT_FOUND'}) end
 local group = config.groups[groupIndex]
@@ -316,6 +334,21 @@ export async function updateStockAlerts(userId: string, securityId: string, payl
   const input = updateStockAlertsPayloadSchema.parse(payload)
   const response = await execute(userId, 'UPDATE_ALERTS', { securityId, rules: input.rules }, expectedVersion)
   return { config: parseResponseConfig(response), alerts: response.result?.alerts ?? null }
+}
+
+/** 原子覆盖用户的全部自选分组，并清理不再关联证券的提醒配置。 */
+export async function replaceStockGroups(userId: string, payload: StockGroupsExportFilePayload, expectedVersion: number) {
+  const input = stockGroupsExportFileSchema.parse(payload)
+  const now = new Date().toISOString()
+  const groups: StockGroup[] = input.groups.map((group, index) => ({
+    id: `group_${randomUUID()}`,
+    name: group.name.trim(),
+    sortOrder: index,
+    isDefault: group.isDefault,
+    members: group.members.map(member => ({ ...member, addedAt: now }))
+  }))
+  const response = await execute(userId, 'REPLACE_GROUPS', { groups }, expectedVersion)
+  return { config: parseResponseConfig(response), groups: response.result?.groups ?? [] }
 }
 
 async function execute(userId: string, operation: Operation, payload: Record<string, unknown> = {}, expectedVersion = 0, generatedGroupId = ''): Promise<ScriptResponse> {

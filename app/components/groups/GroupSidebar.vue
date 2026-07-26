@@ -8,13 +8,15 @@ import {
 import {
   IconChartDots3,
   IconChevronRight,
-  IconDots,
+  IconDotsVertical,
+  IconDownload,
   IconEdit,
   IconFolder,
   IconInfoCircle,
   IconPlus,
   IconTrash,
-  IconSettings
+  IconSettings,
+  IconUpload
 } from '@tabler/icons-vue'
 import type { WatchGroup } from '~/types/market'
 
@@ -29,11 +31,14 @@ const emit = defineEmits<{
   rename: [group: WatchGroup]
   delete: [group: WatchGroup]
   settings: []
+  export: []
+  import: [file: File]
 }>()
 
 const persistedGroupCount = computed(() => props.groups.filter(group => group.id !== 'all').length)
 const totalSecurityCount = computed(() => props.groups.find(group => group.id === 'all')?.count ?? 0)
 const menuPositions = reactive<Record<string, { top: string, left: string }>>({})
+const importInput = ref<HTMLInputElement>()
 
 function positionMenu(groupId: string, event: MouseEvent) {
   const button = event.currentTarget as HTMLElement
@@ -42,6 +47,17 @@ function positionMenu(groupId: string, event: MouseEvent) {
     top: `${rect.bottom + 6}px`,
     left: `${Math.max(8, rect.right - 128)}px`
   }
+}
+
+function selectImportFile() {
+  importInput.value?.click()
+}
+
+function handleImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) emit('import', file)
 }
 </script>
 
@@ -56,16 +72,79 @@ function positionMenu(groupId: string, event: MouseEvent) {
           {{ persistedGroupCount }} 个分组 · {{ totalSecurityCount }} 只证券
         </p>
       </div>
-      <button
-        type="button"
-        class="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100"
-        aria-label="新建分组"
-        title="新建分组"
-        @click="emit('add')"
-      >
-        <IconPlus :size="18" />
-        <span>新建</span>
-      </button>
+      <div class="flex items-center gap-1">
+        <input
+          ref="importInput"
+          type="file"
+          accept="application/json,.json"
+          class="hidden"
+          @change="handleImportFile"
+        >
+        <button
+          type="button"
+          class="hidden"
+          aria-label="导出自选分组"
+          title="导出分组"
+          @click="emit('export')"
+        >
+          <IconDownload :size="17" />
+        </button>
+        <button
+          type="button"
+          class="hidden"
+          aria-label="导入自选分组"
+          title="导入分组"
+          @click="selectImportFile"
+        >
+          <IconUpload :size="17" />
+        </button>
+        <Menu
+          as="div"
+          class="relative z-30 order-last"
+        >
+          <MenuButton
+            class="grid h-9 w-9 place-items-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            aria-label="更多分组操作"
+            title="更多操作"
+          >
+            <IconDotsVertical :size="18" />
+          </MenuButton>
+          <MenuItems class="absolute right-0 top-full z-40 mt-2 w-32 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-xl shadow-slate-900/10 focus:outline-none">
+            <MenuItem v-slot="{ active }">
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-600"
+                :class="active && 'bg-slate-50 text-slate-900'"
+                @click="emit('export')"
+              >
+                <IconUpload :size="15" />
+                导出分组
+              </button>
+            </MenuItem>
+            <MenuItem v-slot="{ active }">
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-600"
+                :class="active && 'bg-slate-50 text-slate-900'"
+                @click="selectImportFile"
+              >
+                <IconDownload :size="15" />
+                导入分组
+              </button>
+            </MenuItem>
+          </MenuItems>
+        </Menu>
+        <button
+          type="button"
+          class="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100"
+          aria-label="新建分组"
+          title="新建分组"
+          @click="emit('add')"
+        >
+          <IconPlus :size="18" />
+          <span>新建</span>
+        </button>
+      </div>
     </div>
 
     <nav
@@ -124,7 +203,7 @@ function positionMenu(groupId: string, event: MouseEvent) {
             :aria-label="`${group.name} 更多操作`"
             @click="positionMenu(group.id, $event)"
           >
-            <IconDots :size="17" />
+            <IconDotsVertical :size="17" />
           </MenuButton>
           <Teleport to="body">
             <MenuItems

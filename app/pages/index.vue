@@ -3,6 +3,7 @@ import { IconCircleCheck } from '@tabler/icons-vue'
 import AlertNotificationsDialog from '~/components/alerts/AlertNotificationsDialog.vue'
 import AlertRuleDrawer from '~/components/alerts/AlertRuleDrawer.vue'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
+import GroupImportConfirmDialog from '~/components/groups/GroupImportConfirmDialog.vue'
 import GroupFormDialog from '~/components/groups/GroupFormDialog.vue'
 import GroupSidebar from '~/components/groups/GroupSidebar.vue'
 import MonitorSettingsDialog from '~/components/monitoring/MonitorSettingsDialog.vue'
@@ -15,7 +16,8 @@ import QuoteHealthCards from '~/components/quotes/QuoteHealthCards.vue'
 import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
 import type { SecurityQuote, WatchGroup } from '~/types/market'
 import type { NormalizedQuote, QuoteProvider } from '~/services/quotes/types'
-import type { AlertRule, SecurityItem } from '~~/shared/types/stock'
+import type { AlertRule, SecurityItem, StockGroupsExportFile } from '~~/shared/types/stock'
+import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
 import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 
@@ -61,6 +63,8 @@ const removingSecurity = ref(false)
 const activeSecurity = ref<SecurityQuote | null>(null)
 const transferDialogOpen = ref(false)
 const transferMode = ref<'MOVE' | 'COPY'>('MOVE')
+const importedGroupsFile = ref<StockGroupsExportFile | null>(null)
+const importGroupsConfirmOpen = ref(false)
 
 const groups = computed(() => userConfigStore.watchGroups)
 const selectedGroup = computed(() => groups.value.find(group => group.id === selectedGroupId.value) ?? groups.value[0]!)
@@ -275,6 +279,71 @@ function openGroupForm() {
   groupFormOpen.value = true
 }
 
+function exportGroups() {
+  const payload: StockGroupsExportFile = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    groups: userConfigStore.stockGroups.map(group => ({
+      name: group.name,
+      isDefault: group.isDefault,
+      members: group.members.map(({ addedAt: _addedAt, ...member }) => member)
+    }))
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `value-ticker-groups-${formatExportDate(new Date())}.json`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(link.href)
+  showSavedToast(`已导出 ${payload.groups.length} 个分组`)
+}
+
+async function prepareGroupImport(file: File) {
+  try {
+    const parsed = stockGroupsExportFileSchema.safeParse(JSON.parse(await file.text()))
+    if (!parsed.success) {
+      showSavedToast(parsed.error.issues[0]?.message ?? '导入文件格式不合法')
+      return
+    }
+    importedGroupsFile.value = parsed.data
+    importGroupsConfirmOpen.value = true
+  } catch {
+    showSavedToast('无法读取 JSON 导入文件')
+  }
+}
+
+function closeGroupImportConfirm() {
+  if (userConfigStore.saving) return
+  importGroupsConfirmOpen.value = false
+  importedGroupsFile.value = null
+}
+
+async function importGroups() {
+  const payload = importedGroupsFile.value
+  if (!payload) return
+  try {
+    await userConfigStore.replaceGroups(payload)
+    selectedGroupId.value = 'all'
+    closeGroupImportConfirm()
+    showSavedToast(`已导入 ${payload.groups.length} 个分组`)
+  } catch (error) {
+    console.error('[ValueTicker] 导入分组失败', error)
+    showSavedToast(userConfigStore.errorMessage || '导入分组失败')
+  }
+}
+
+function formatExportDate(value: Date) {
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${value.getFullYear()}${pad(value.getMonth() + 1)}${pad(value.getDate())}`
+}
+
+function formatImportedAt(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+}
+
 function closeGroupForm() {
   groupFormOpen.value = false
 }
@@ -473,7 +542,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
 
     <main class="min-h-0 flex-1 overflow-y-auto px-3 pb-6 pt-4 sm:px-6 sm:pt-6">
       <div class="mx-auto min-h-full max-w-[1680px]">
-        <div class="grid min-h-full min-w-0 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_280px]">
+        <div class="grid min-h-full min-w-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_280px]">
           <GroupSidebar
             :groups="groups"
             :selected-id="selectedGroupId"
@@ -482,6 +551,8 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
             @rename="openRenameGroupForm"
             @delete="openDeleteGroupConfirm"
             @settings="monitorSettingsOpen = true"
+            @export="exportGroups"
+            @import="prepareGroupImport"
           />
 
           <div class="min-w-0 space-y-4">
@@ -553,6 +624,16 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
       :existing-names="editableGroupNames"
       @close="closeGroupForm"
       @submit="submitGroupForm"
+    />
+
+    <GroupImportConfirmDialog
+      :open="importGroupsConfirmOpen"
+      :group-count="importedGroupsFile?.groups.length ?? 0"
+      :security-count="new Set(importedGroupsFile?.groups.flatMap(group => group.members.map(member => member.securityId)) ?? []).size"
+      :exported-at="importedGroupsFile ? formatImportedAt(importedGroupsFile.exportedAt) : ''"
+      :pending="userConfigStore.saving"
+      @close="closeGroupImportConfirm"
+      @confirm="importGroups"
     />
 
     <AddSecurityDialog

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
-import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, transferStockMemberRequest, updateStockAlertsRequest } from '~/services/api/stock-config'
+import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, replaceStockGroupsRequest, transferStockMemberRequest, updateStockAlertsRequest } from '~/services/api/stock-config'
 import type { WatchGroup } from '~/types/market'
-import type { AlertRule, SecurityItem, StockGroup, UserStockConfig } from '~~/shared/types/stock'
+import type { AlertRule, SecurityItem, StockGroup, StockGroupsExportFile, UserStockConfig } from '~~/shared/types/stock'
 
 export const useUserConfigStore = defineStore('user-config', () => {
   const config = ref<UserStockConfig | null>(null)
@@ -255,6 +255,29 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
+  async function replaceGroups(payload: StockGroupsExportFile) {
+    await ensureConfigLoaded()
+    saving.value = true
+    errorMessage.value = ''
+
+    try {
+      const result = await replaceStockGroupsRequest(payload, config.value!.configVersion)
+      config.value = result.config
+      return result.groups
+    } catch (error) {
+      if (isVersionConflict(error)) {
+        await loadConfig()
+        const result = await replaceStockGroupsRequest(payload, config.value!.configVersion)
+        config.value = result.config
+        return result.groups
+      }
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    } finally {
+      saving.value = false
+    }
+  }
+
   async function retryRenameGroupAfterConflict(groupId: string, name: string) {
     await loadConfig()
 
@@ -356,7 +379,8 @@ export const useUserConfigStore = defineStore('user-config', () => {
     addMember,
     deleteMember,
     transferMember,
-    saveSecurityAlerts
+    saveSecurityAlerts,
+    replaceGroups
   }
 })
 

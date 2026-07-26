@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_GROUP_ID, STOCK_CONFIG_SCHEMA_VERSION } from '../constants/stock'
-import { createStockGroupPayloadSchema, userStockConfigSchema } from './stock-config'
+import { createStockGroupPayloadSchema, stockGroupsExportFileSchema, userStockConfigSchema } from './stock-config'
 
 describe('stock config schema', () => {
   it('accepts a valid default config', () => {
@@ -57,5 +57,39 @@ describe('stock config schema', () => {
     expect(createStockGroupPayloadSchema.safeParse({ name: '核心资产' }).success).toBe(true)
     expect(createStockGroupPayloadSchema.safeParse({ name: '' }).success).toBe(false)
     expect(createStockGroupPayloadSchema.safeParse({ name: '一二三四五六七八九十一二三四五六七八九十一' }).success).toBe(false)
+  })
+
+  it('accepts an export file with one default group', () => {
+    const result = stockGroupsExportFileSchema.safeParse({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      groups: [{
+        name: 'Core',
+        isDefault: true,
+        members: [{
+          securityId: 'SSE:600000',
+          exchange: 'SSE',
+          code: '600000',
+          name: 'Demo',
+          securityType: 'STOCK',
+          board: 'MAIN',
+          boardLabel: '',
+          pricePrecision: 2,
+          providerSymbols: { tencent: 'sh600000', eastmoney: '1.600000' }
+        }]
+      }]
+    })
+
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects an export file without a default group', () => {
+    const result = stockGroupsExportFileSchema.safeParse({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      groups: [{ name: 'Core', members: [] }]
+    })
+
+    expect(result.success).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
 import type { ApiError, ApiResponse } from '~~/shared/types/api'
-import type { AlertRule, SecurityAlerts, SecurityItem, StockGroup, UserStockConfig } from '~~/shared/types/stock'
+import type { AlertRule, SecurityAlerts, SecurityItem, StockGroup, StockGroupsExportFile, UserStockConfig } from '~~/shared/types/stock'
 
 export class ClientApiError extends Error {
   /** 创建包含服务端错误码的客户端 API 异常。 */
@@ -28,9 +28,23 @@ export interface SecuritySearchResult {
   items: SecurityItem[]
 }
 
+export interface ReplaceStockGroupsResult {
+  config: UserStockConfig
+  groups: StockGroup[]
+}
+
 /** 获取当前用户的完整股票配置。 */
 export async function fetchStockConfig() {
   return requestApi<UserStockConfig>('/api/stock-config')
+}
+
+/** 使用导入文件的分组内容覆盖当前全部自选分组。 */
+export async function replaceStockGroupsRequest(payload: StockGroupsExportFile, configVersion: number) {
+  return requestApi<ReplaceStockGroupsResult>('/api/stock-groups/import', {
+    method: 'PUT',
+    headers: { 'If-Match': String(configVersion) },
+    body: payload
+  })
 }
 
 /** 请求创建股票分组。 */

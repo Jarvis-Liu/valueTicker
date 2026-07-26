@@ -148,7 +148,7 @@ function save() {
                     </h3>
                   </div>
                   <p class="mt-1 text-[11px] leading-4 text-slate-400">
-                    最短为 5 秒；上一轮请求未完成时不会发起新的请求。该偏好仅保存在当前浏览器。
+                    上一轮请求未完成时不会发起新的请求。该偏好仅保存在当前浏览器。
                   </p>
                   <div class="mt-3 grid grid-cols-4 gap-2">
                     <button

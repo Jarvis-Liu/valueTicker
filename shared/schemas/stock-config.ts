@@ -111,8 +111,49 @@ export const updateStockAlertsPayloadSchema = z.object({
   rules: z.array(alertRuleSchema).max(8)
 })
 
+export const stockGroupsExportFileSchema = z.object({
+  version: z.literal(1),
+  exportedAt: z.string().datetime(),
+  groups: z.array(z.object({
+    name: z.string().trim().min(1).max(MAX_GROUP_NAME_LENGTH),
+    isDefault: z.boolean().optional(),
+    members: z.array(securityItemSchema).max(MAX_GROUP_MEMBERS)
+  })).min(1).max(MAX_GROUPS_PER_USER)
+}).superRefine((file, ctx) => {
+  const names = new Set<string>()
+  const securityIds = new Set<string>()
+  let defaultGroupCount = 0
+
+  for (const [index, group] of file.groups.entries()) {
+    const normalizedName = group.name.trim().toLocaleLowerCase()
+    if (names.has(normalizedName)) {
+      ctx.addIssue({ code: 'custom', path: ['groups', index, 'name'], message: '分组名称不能重复' })
+    }
+    names.add(normalizedName)
+    if (group.isDefault) defaultGroupCount += 1
+
+    const memberIds = new Set<string>()
+    for (const [memberIndex, member] of group.members.entries()) {
+      if (memberIds.has(member.securityId)) {
+        ctx.addIssue({ code: 'custom', path: ['groups', index, 'members', memberIndex], message: '同一分组内不能重复添加证券' })
+      }
+      memberIds.add(member.securityId)
+      securityIds.add(member.securityId)
+    }
+  }
+
+  if (defaultGroupCount !== 1) {
+    ctx.addIssue({ code: 'custom', path: ['groups'], message: '导入文件必须且只能包含一个默认分组' })
+  }
+
+  if (securityIds.size > MAX_SECURITIES_PER_USER) {
+    ctx.addIssue({ code: 'custom', path: ['groups'], message: '证券数量超过用户上限' })
+  }
+})
+
 export type CreateStockGroupPayload = z.infer<typeof createStockGroupPayloadSchema>
 export type UpdateStockGroupPayload = z.infer<typeof updateStockGroupPayloadSchema>
 export type AddStockMemberPayload = z.infer<typeof addStockMemberPayloadSchema>
 export type TransferStockMemberPayload = z.infer<typeof transferStockMemberPayloadSchema>
 export type UpdateStockAlertsPayload = z.infer<typeof updateStockAlertsPayloadSchema>
+export type StockGroupsExportFilePayload = z.infer<typeof stockGroupsExportFileSchema>
