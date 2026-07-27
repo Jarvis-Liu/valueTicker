@@ -10,12 +10,14 @@ import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 import IntradayTrendSparkline from '~/components/quotes/IntradayTrendSparkline.vue'
 import type { NormalizedQuote, SecurityIntradayTrend } from '~/services/quotes/types'
 import type { AlertNotification, SecurityQuote } from '~/types/market'
+import type { MarketTurnoverDisplay } from '~/utils/market-turnover'
 
 const props = defineProps<{
   notifications: AlertNotification[]
   indexQuotes: NormalizedQuote[]
   indexTrends: Record<string, SecurityIntradayTrend>
   watchlistQuotes: SecurityQuote[]
+  marketTurnover: MarketTurnoverDisplay | null
 }>()
 
 const emit = defineEmits<{
@@ -74,6 +76,23 @@ const watchlistPerformanceText = computed(() => {
   return `上涨 ${performance.up} · 下跌 ${performance.down} · 平 ${performance.flat}${pendingText}`
 })
 
+const marketTurnoverText = computed(() => props.marketTurnover ? formatTurnover(props.marketTurnover.total) : '--')
+const marketTurnoverComparison = computed(() => {
+  const current = props.marketTurnover
+  const reference = current?.reference
+  if (!current || !reference) return current?.phase ? '同昨基准待生成' : '11:30 后可对比午盘'
+  const referenceTotal = reference.exchanges.sse + reference.exchanges.szse + reference.exchanges.bse
+  const delta = current.total - referenceTotal
+  const percent = referenceTotal === 0 ? 0 : delta / referenceTotal * 100
+  return `较昨 ${formatSignedTurnover(delta)}（${percent >= 0 ? '+' : ''}${percent.toFixed(2)}%）`
+})
+const marketTurnoverTone = computed(() => {
+  const current = props.marketTurnover
+  const reference = current?.reference
+  if (!current || !reference) return 'text-slate-400'
+  const referenceTotal = reference.exchanges.sse + reference.exchanges.szse + reference.exchanges.bse
+  return current.total >= referenceTotal ? 'text-rose-600' : 'text-emerald-600'
+})
 function formatIndexValue(value: number | undefined) {
   return Number.isFinite(value) ? value!.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'
 }
@@ -86,6 +105,17 @@ function formatSignedPercent(value: number | undefined) {
 function percent(value: number, total: number) {
   if (total <= 0) return '0%'
   return `${(value / total) * 100}%`
+}
+function formatTurnover(value: number) {
+  if (!Number.isFinite(value)) return '--'
+  return `${(value / 1_000_000_000_000).toFixed(2)} 万亿`
+}
+
+function formatSignedTurnover(value: number) {
+  const absolute = Math.abs(value)
+  const unit = absolute >= 100_000_000_000 ? '万亿' : '亿'
+  const divisor = unit === '万亿' ? 1_000_000_000_000 : 100_000_000
+  return `${value >= 0 ? '+' : '-'}${(absolute / divisor).toFixed(unit === '万亿' ? 2 : 0)} ${unit}`
 }
 </script>
 
@@ -142,6 +172,18 @@ function percent(value: number, total: number) {
             {{ item.change }}
           </span>
         </div>
+      </div>
+      <div class="mx-4 mb-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+        <div class="flex items-baseline justify-between gap-3">
+          <span class="text-[10px] text-slate-500">三市成交额</span>
+          <strong class="text-sm font-semibold text-slate-900 tabular-number">{{ marketTurnoverText }}</strong>
+        </div>
+        <p
+          class="mt-1 text-right text-[10px] tabular-number"
+          :class="marketTurnoverTone"
+        >
+          {{ marketTurnoverComparison }}
+        </p>
       </div>
       <div class="mx-4 mb-4 rounded-xl bg-[#f4f8f6] px-3 py-3">
         <div class="flex items-center justify-between gap-3 text-[10px] text-slate-400">

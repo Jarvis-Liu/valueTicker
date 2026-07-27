@@ -28,7 +28,7 @@ const emit = defineEmits<{
     :show="open"
   >
     <Dialog
-      class="relative z-50"
+      class="relative z-[80]"
       @close="emit('close')"
     >
       <TransitionChild

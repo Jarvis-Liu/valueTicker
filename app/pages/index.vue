@@ -20,6 +20,10 @@ import type { AlertRule, SecurityItem, StockGroupsExportFile } from '~~/shared/t
 import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
 import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
+import { fetchMarketTurnoverSnapshots, requestMarketTurnoverSnapshotUpdate } from '~/services/api/market-turnover'
+import { fetchTencentMarketTurnover } from '~/services/market-turnover/tencent-market-turnover'
+import { getClientMarketTurnoverPhase, getPreviousWeekdayTradeDate, sumMarketTurnover, type MarketTurnoverDisplay } from '~/utils/market-turnover'
+import type { MarketTurnoverSnapshot } from '~~/shared/types/market-turnover'
 
 const userConfigStore = useUserConfigStore()
 const marketStore = useMarketStore()
@@ -65,6 +69,7 @@ const transferDialogOpen = ref(false)
 const transferMode = ref<'MOVE' | 'COPY'>('MOVE')
 const importedGroupsFile = ref<StockGroupsExportFile | null>(null)
 const importGroupsConfirmOpen = ref(false)
+const marketTurnover = ref<MarketTurnoverDisplay | null>(null)
 
 const groups = computed(() => userConfigStore.watchGroups)
 const selectedGroup = computed(() => groups.value.find(group => group.id === selectedGroupId.value) ?? groups.value[0]!)
@@ -122,6 +127,8 @@ onMounted(async () => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await userConfigStore.loadConfig()
+      // 页面进入只请求一次腾讯成交额；它不加入 5 秒行情轮询。
+      void refreshMarketTurnover()
       if (enableQuoteWorker) {
         quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value, activeAlerts.value, pollingIntervalMs.value)
         monitorStarted = true
@@ -247,11 +254,35 @@ function refresh() {
   if (refreshing.value) return
   refreshing.value = true
   quoteMonitor.forceRefresh()
+  // 成交额按产品约定仅在页面进入与用户手动刷新时请求。
+  void refreshMarketTurnover()
   window.setTimeout(() => {
     refreshing.value = false
   }, 700)
 }
 
+/**
+ * 直连腾讯计算当前三市总成交额；仅在午盘/收盘采集窗口内申请服务端保存快照。
+ * 实时展示失败不影响主行情表格的手动刷新。
+ */
+async function refreshMarketTurnover() {
+  try {
+    const live = await fetchTencentMarketTurnover()
+    const phase = getClientMarketTurnoverPhase()
+    let reference: MarketTurnoverSnapshot | null = null
+
+    if (phase) {
+      const previous = await fetchMarketTurnoverSnapshots(getPreviousWeekdayTradeDate())
+      reference = previous.snapshots[phase] ?? null
+      // 服务端会复核窗口、交易日和封存状态；此处只避免不必要的请求。
+      await requestMarketTurnoverSnapshotUpdate(live.exchanges, live.sourceUpdatedAt)
+    }
+
+    marketTurnover.value = { total: sumMarketTurnover(live.exchanges), phase, reference }
+  } catch (error) {
+    console.warn('[ValueTicker] 获取市场成交额失败', error)
+  }
+}
 function toggleMonitor() {
   paused.value = !paused.value
   if (paused.value) quoteMonitor.pause()
@@ -608,6 +639,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               :index-quotes="marketIndexQuotes"
               :index-trends="marketStore.intradayTrends"
               :watchlist-quotes="configuredQuotes"
+              :market-turnover="marketTurnover"
               @clear-notifications="requestClearAlertNotifications"
             />
           </div>
