@@ -109,6 +109,14 @@ export const reorderStockGroupsPayloadSchema = z.object({
   }
 })
 
+export const reorderStockGroupMembersPayloadSchema = z.object({
+  securityIds: z.array(z.string().min(1)).min(1).max(MAX_GROUP_MEMBERS)
+}).superRefine((payload, ctx) => {
+  if (new Set(payload.securityIds).size !== payload.securityIds.length) {
+    ctx.addIssue({ code: 'custom', path: ['securityIds'], message: '证券 ID 不能重复' })
+  }
+})
+
 export const addStockMemberPayloadSchema = securityItemSchema
 export const transferStockMemberPayloadSchema = z.object({
   targetGroupId: z.string().min(1),
@@ -161,6 +169,7 @@ export const stockGroupsExportFileSchema = z.object({
 export type CreateStockGroupPayload = z.infer<typeof createStockGroupPayloadSchema>
 export type UpdateStockGroupPayload = z.infer<typeof updateStockGroupPayloadSchema>
 export type ReorderStockGroupsPayload = z.infer<typeof reorderStockGroupsPayloadSchema>
+export type ReorderStockGroupMembersPayload = z.infer<typeof reorderStockGroupMembersPayloadSchema>
 export type AddStockMemberPayload = z.infer<typeof addStockMemberPayloadSchema>
 export type TransferStockMemberPayload = z.infer<typeof transferStockMemberPayloadSchema>
 export type UpdateStockAlertsPayload = z.infer<typeof updateStockAlertsPayloadSchema>

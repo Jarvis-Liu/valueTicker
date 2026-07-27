@@ -1,5 +1,5 @@
-import { defineStore } from 'pinia'
-import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, reorderStockGroupsRequest, replaceStockGroupsRequest, transferStockMemberRequest, updateStockAlertsRequest } from '~/services/api/stock-config'
+import { acceptHMRUpdate, defineStore } from 'pinia'
+import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, reorderStockGroupMembersRequest, reorderStockGroupsRequest, replaceStockGroupsRequest, transferStockMemberRequest, updateStockAlertsRequest } from '~/services/api/stock-config'
 import type { WatchGroup } from '~/types/market'
 import type { AlertRule, SecurityItem, StockGroup, StockGroupsExportFile, UserStockConfig } from '~~/shared/types/stock'
 
@@ -193,6 +193,44 @@ export const useUserConfigStore = defineStore('user-config', () => {
         const result = await reorderStockGroupsRequest(groupIds, config.value.configVersion)
         config.value = result.config
         return result.groups
+      }
+
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    } finally {
+      saving.value = false
+    }
+  }
+  async function reorderGroupMembers(groupId: string, securityIds: string[]) {
+    await ensureConfigLoaded()
+
+    const currentConfig = config.value!
+    const snapshot = cloneUserStockConfig(currentConfig)
+    const targetGroup = currentConfig.groups.find(group => group.id === groupId)
+    if (!targetGroup) throw new Error('分组不存在')
+
+    const membersById = new Map(targetGroup.members.map(member => [member.securityId, member]))
+    if (securityIds.length !== membersById.size || securityIds.some(securityId => !membersById.has(securityId))) {
+      throw new Error('证券顺序不合法')
+    }
+
+    saving.value = true
+    errorMessage.value = ''
+    targetGroup.members = securityIds.map(securityId => membersById.get(securityId)!)
+
+    try {
+      const result = await reorderStockGroupMembersRequest(groupId, securityIds, snapshot.configVersion)
+      config.value = result.config
+      return result.group
+    } catch (error) {
+      config.value = snapshot
+
+      if (isVersionConflict(error)) {
+        await loadConfig()
+        if (!config.value) throw new Error('用户配置尚未加载')
+        const result = await reorderStockGroupMembersRequest(groupId, securityIds, config.value.configVersion)
+        config.value = result.config
+        return result.group
       }
 
       errorMessage.value = getErrorMessage(error)
@@ -412,6 +450,7 @@ export const useUserConfigStore = defineStore('user-config', () => {
     renameGroup,
     deleteGroup,
     reorderGroups,
+    reorderGroupMembers,
     addMember,
     deleteMember,
     transferMember,
@@ -419,6 +458,10 @@ export const useUserConfigStore = defineStore('user-config', () => {
     replaceGroups
   }
 })
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useUserConfigStore, import.meta.hot))
+}
 
 function toWatchGroup(group: StockGroup): WatchGroup {
   return {

@@ -196,6 +196,17 @@ async function reorderGroups(groupIds: string[]) {
     showSavedToast(userConfigStore.errorMessage || '分组排序保存失败')
   }
 }
+async function reorderGroupMembers(securityIds: string[]) {
+  if (selectedGroupId.value === 'all') return
+
+  try {
+    await userConfigStore.reorderGroupMembers(selectedGroupId.value, securityIds)
+    showSavedToast('证券顺序已保存')
+  } catch (error) {
+    console.error('[ValueTicker] 调整证券顺序失败', error)
+    showSavedToast(userConfigStore.errorMessage || '证券排序保存失败')
+  }
+}
 function isWindowActive() {
   return document.visibilityState === 'visible' && document.hasFocus()
 }
@@ -578,6 +589,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               @remove="openRemoveSecurityConfirm"
               @move="openTransferDialog('MOVE', $event)"
               @copy="openTransferDialog('COPY', $event)"
+              @reorder="reorderGroupMembers"
             />
 
             <QuoteHealthCards

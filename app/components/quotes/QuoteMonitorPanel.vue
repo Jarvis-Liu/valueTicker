@@ -7,11 +7,12 @@ import {
   IconSearch
 } from '@tabler/icons-vue'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
+import { VueDraggable } from 'vue-draggable-plus'
 import type { SecurityQuote } from '~/types/market'
 import type { SecurityIntradayTrend } from '~/services/quotes/types'
 import IntradayTrendSparkline from './IntradayTrendSparkline.vue'
 
-defineProps<{
+const props = defineProps<{
   title: string
   quotes: SecurityQuote[]
   trends: Record<string, SecurityIntradayTrend>
@@ -22,14 +23,20 @@ defineProps<{
 const search = defineModel<string>('search', { default: '' })
 const menuPositions = reactive<Record<string, { top: string, left: string }>>({})
 
-defineEmits<{
+const emit = defineEmits<{
   alert: [quote: SecurityQuote]
   add: []
   remove: [quote: SecurityQuote]
   move: [quote: SecurityQuote]
   copy: [quote: SecurityQuote]
+  reorder: [securityIds: string[]]
 }>()
 
+const sortable = computed(() => props.canRemove && !search.value)
+
+function handleQuoteReorder(nextQuotes: SecurityQuote[]) {
+  emit('reorder', nextQuotes.map(quote => quote.securityId))
+}
 function positionMenu(securityId: string, event: MouseEvent) {
   const button = event.currentTarget as HTMLElement
   const rect = button.getBoundingClientRect()
@@ -161,7 +168,16 @@ function pad(value: number) {
             </th>
           </tr>
         </thead>
-        <tbody>
+        <VueDraggable
+          tag="tbody"
+          :model-value="quotes"
+          handle=".quote-drag-handle"
+          :disabled="!sortable"
+          :animation="150"
+          ghost-class="bg-emerald-50"
+          chosen-class="bg-emerald-50"
+          @update:model-value="handleQuoteReorder"
+        >
           <tr
             v-for="quote in quotes"
             :key="quote.securityId"
@@ -169,7 +185,11 @@ function pad(value: number) {
           >
             <td class="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-[#f9fbfa]">
               <div class="flex items-center gap-3">
-                <div class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-[11px] font-bold text-slate-500">
+                <div
+                  class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-[11px] font-bold text-slate-500"
+                  :class="sortable && 'quote-drag-handle cursor-grab active:cursor-grabbing'"
+                  :title="sortable ? '拖动头像调整证券顺序' : undefined"
+                >
                   {{ quote.securityType === 'ETF' ? 'ETF' : quote.name.slice(0, 1) }}
                 </div>
                 <div>
@@ -329,7 +349,7 @@ function pad(value: number) {
               没有匹配的证券
             </td>
           </tr>
-        </tbody>
+        </VueDraggable>
       </table>
     </div>
   </section>

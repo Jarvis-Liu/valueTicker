@@ -10,6 +10,7 @@ import {
   addStockMemberPayloadSchema,
   createStockGroupPayloadSchema,
   reorderStockGroupsPayloadSchema,
+  reorderStockGroupMembersPayloadSchema,
   stockGroupsExportFileSchema,
   transferStockMemberPayloadSchema,
   updateStockAlertsPayloadSchema,
@@ -20,6 +21,7 @@ import type {
   AddStockMemberPayload,
   CreateStockGroupPayload,
   ReorderStockGroupsPayload,
+  ReorderStockGroupMembersPayload,
   StockGroupsExportFilePayload,
   TransferStockMemberPayload,
   UpdateStockAlertsPayload,
@@ -30,7 +32,7 @@ import type { StockGroup, UserStockConfig } from '~~/shared/types/stock'
 import { ApiResponseError } from '~~/server/utils/api-response'
 import { getRedisClient } from '~~/server/utils/redis'
 
-type Operation = 'READ' | 'CREATE_GROUP' | 'RENAME_GROUP' | 'DELETE_GROUP' | 'REORDER_GROUPS' | 'ADD_MEMBER' | 'DELETE_MEMBER' | 'TRANSFER_MEMBER' | 'UPDATE_ALERTS' | 'REPLACE_GROUPS'
+type Operation = 'READ' | 'CREATE_GROUP' | 'RENAME_GROUP' | 'DELETE_GROUP' | 'REORDER_GROUPS' | 'REORDER_MEMBERS' | 'ADD_MEMBER' | 'DELETE_MEMBER' | 'TRANSFER_MEMBER' | 'UPDATE_ALERTS' | 'REPLACE_GROUPS'
 
 type RedisEvaluator = {
   eval: (script: string, keys: string[], args: string[]) => Promise<unknown>
@@ -248,6 +250,20 @@ local groupIndex = findGroupIndex(payload.groupId)
 if not groupIndex then return cjson.encode({status = 'ERROR', code = 'GROUP_NOT_FOUND'}) end
 local group = config.groups[groupIndex]
 
+if ARGV[2] == 'REORDER_MEMBERS' then
+  if #payload.securityIds ~= #group.members then return cjson.encode({status = 'ERROR', code = 'INVALID_PAYLOAD'}) end
+  local reordered = emptyArray()
+  local included = {}
+  for _, securityId in ipairs(payload.securityIds) do
+    if included[securityId] then return cjson.encode({status = 'ERROR', code = 'INVALID_PAYLOAD'}) end
+    local _, member = findMember(group, securityId)
+    if not member then return cjson.encode({status = 'ERROR', code = 'SECURITY_NOT_FOUND'}) end
+    included[securityId] = true
+    table.insert(reordered, member)
+  end
+  group.members = reordered
+  return persist({group = group})
+end
 if ARGV[2] == 'RENAME_GROUP' then
   if groupNameExists(payload.name, group.id) then return cjson.encode({status = 'ERROR', code = 'DUPLICATE_GROUP_NAME'}) end
   group.name = payload.name
@@ -328,6 +344,11 @@ export async function reorderStockGroups(userId: string, payload: ReorderStockGr
   const input = reorderStockGroupsPayloadSchema.parse(payload)
   const response = await execute(userId, 'REORDER_GROUPS', { groupIds: input.groupIds }, expectedVersion)
   return { config: parseResponseConfig(response), groups: response.result?.groups ?? [] }
+}
+export async function reorderStockGroupMembers(userId: string, groupId: string, payload: ReorderStockGroupMembersPayload, expectedVersion: number) {
+  const input = reorderStockGroupMembersPayloadSchema.parse(payload)
+  const response = await execute(userId, 'REORDER_MEMBERS', { groupId, securityIds: input.securityIds }, expectedVersion)
+  return { config: parseResponseConfig(response), group: response.result?.group }
 }
 export async function addStockGroupMember(userId: string, groupId: string, payload: AddStockMemberPayload, expectedVersion: number) {
   const input = addStockMemberPayloadSchema.parse(payload)

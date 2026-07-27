@@ -19,6 +19,11 @@ export interface AddStockMemberResult {
   member: SecurityItem & { addedAt: string }
 }
 
+export interface ReorderStockGroupMembersResult {
+  config: UserStockConfig
+  group: StockGroup
+}
+
 export interface UpdateStockAlertsResult {
   config: UserStockConfig
   alerts: SecurityAlerts | null
@@ -102,6 +107,14 @@ export async function searchSecuritiesRequest(keyword: string) {
   return requestApi<SecuritySearchResult>(`/api/securities/search?q=${encodeURIComponent(keyword)}`)
 }
 
+/** 保存具体分组内的证券显示顺序。 */
+export async function reorderStockGroupMembersRequest(groupId: string, securityIds: string[], configVersion: number) {
+  return requestApi<ReorderStockGroupMembersResult>(`/api/stock-groups/${encodeURIComponent(groupId)}/members/reorder`, {
+    method: 'PUT',
+    headers: { 'If-Match': String(configVersion) },
+    body: { securityIds }
+  })
+}
 /** 请求将证券添加到指定分组。 */
 export async function addStockMemberRequest(groupId: string, security: SecurityItem, configVersion: number) {
   return requestApi<AddStockMemberResult>(`/api/stock-groups/${encodeURIComponent(groupId)}/members`, {
