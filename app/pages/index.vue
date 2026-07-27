@@ -187,6 +187,15 @@ function selectGroup(groupId: string) {
   if (monitorStarted) quoteMonitor.refreshSecurities(getGroupSecurities(userConfigStore.stockGroups, groupId))
 }
 
+async function reorderGroups(groupIds: string[]) {
+  try {
+    await userConfigStore.reorderGroups(groupIds)
+    showSavedToast('分组顺序已保存')
+  } catch (error) {
+    console.error('[ValueTicker] 调整分组顺序失败', error)
+    showSavedToast(userConfigStore.errorMessage || '分组排序保存失败')
+  }
+}
 function isWindowActive() {
   return document.visibilityState === 'visible' && document.hasFocus()
 }
@@ -550,6 +559,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
             @add="openGroupForm"
             @rename="openRenameGroupForm"
             @delete="openDeleteGroupConfirm"
+            @reorder="reorderGroups"
             @settings="monitorSettingsOpen = true"
             @export="exportGroups"
             @import="prepareGroupImport"

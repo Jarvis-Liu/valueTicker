@@ -33,6 +33,11 @@ export interface ReplaceStockGroupsResult {
   groups: StockGroup[]
 }
 
+export interface ReorderStockGroupsResult {
+  config: UserStockConfig
+  groups: StockGroup[]
+}
+
 /** 获取当前用户的完整股票配置。 */
 export async function fetchStockConfig() {
   return requestApi<UserStockConfig>('/api/stock-config')
@@ -44,6 +49,15 @@ export async function replaceStockGroupsRequest(payload: StockGroupsExportFile, 
     method: 'PUT',
     headers: { 'If-Match': String(configVersion) },
     body: payload
+  })
+}
+
+/** 保存分组显示顺序。 */
+export async function reorderStockGroupsRequest(groupIds: string[], configVersion: number) {
+  return requestApi<ReorderStockGroupsResult>('/api/stock-groups/reorder', {
+    method: 'PUT',
+    headers: { 'If-Match': String(configVersion) },
+    body: { groupIds }
   })
 }
 

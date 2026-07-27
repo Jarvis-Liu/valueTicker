@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, replaceStockGroupsRequest, transferStockMemberRequest, updateStockAlertsRequest } from '~/services/api/stock-config'
+import { addStockMemberRequest, ClientApiError, createStockGroupRequest, deleteStockGroupRequest, deleteStockMemberRequest, fetchStockConfig, renameStockGroupRequest, reorderStockGroupsRequest, replaceStockGroupsRequest, transferStockMemberRequest, updateStockAlertsRequest } from '~/services/api/stock-config'
 import type { WatchGroup } from '~/types/market'
 import type { AlertRule, SecurityItem, StockGroup, StockGroupsExportFile, UserStockConfig } from '~~/shared/types/stock'
 
@@ -166,6 +166,41 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
+  async function reorderGroups(groupIds: string[]) {
+    await ensureConfigLoaded()
+
+    const currentConfig = config.value!
+    const snapshot = cloneUserStockConfig(currentConfig)
+    const groupsById = new Map(currentConfig.groups.map(group => [group.id, group]))
+    if (groupIds.length !== groupsById.size || groupIds.some(groupId => !groupsById.has(groupId))) {
+      throw new Error('分组顺序不合法')
+    }
+
+    saving.value = true
+    errorMessage.value = ''
+    currentConfig.groups = groupIds.map((groupId, sortOrder) => ({ ...groupsById.get(groupId)!, sortOrder }))
+
+    try {
+      const result = await reorderStockGroupsRequest(groupIds, snapshot.configVersion)
+      config.value = result.config
+      return result.groups
+    } catch (error) {
+      config.value = snapshot
+
+      if (isVersionConflict(error)) {
+        await loadConfig()
+        if (!config.value) throw new Error('用户配置尚未加载')
+        const result = await reorderStockGroupsRequest(groupIds, config.value.configVersion)
+        config.value = result.config
+        return result.groups
+      }
+
+      errorMessage.value = getErrorMessage(error)
+      throw error
+    } finally {
+      saving.value = false
+    }
+  }
   async function addMember(groupId: string, security: SecurityItem) {
     await ensureConfigLoaded()
     const snapshot = cloneUserStockConfig(config.value!)
@@ -376,6 +411,7 @@ export const useUserConfigStore = defineStore('user-config', () => {
     createGroup,
     renameGroup,
     deleteGroup,
+    reorderGroups,
     addMember,
     deleteMember,
     transferMember,

@@ -9,6 +9,7 @@ import {
 import {
   addStockMemberPayloadSchema,
   createStockGroupPayloadSchema,
+  reorderStockGroupsPayloadSchema,
   stockGroupsExportFileSchema,
   transferStockMemberPayloadSchema,
   updateStockAlertsPayloadSchema,
@@ -18,6 +19,7 @@ import {
 import type {
   AddStockMemberPayload,
   CreateStockGroupPayload,
+  ReorderStockGroupsPayload,
   StockGroupsExportFilePayload,
   TransferStockMemberPayload,
   UpdateStockAlertsPayload,
@@ -28,7 +30,7 @@ import type { StockGroup, UserStockConfig } from '~~/shared/types/stock'
 import { ApiResponseError } from '~~/server/utils/api-response'
 import { getRedisClient } from '~~/server/utils/redis'
 
-type Operation = 'READ' | 'CREATE_GROUP' | 'RENAME_GROUP' | 'DELETE_GROUP' | 'ADD_MEMBER' | 'DELETE_MEMBER' | 'TRANSFER_MEMBER' | 'UPDATE_ALERTS' | 'REPLACE_GROUPS'
+type Operation = 'READ' | 'CREATE_GROUP' | 'RENAME_GROUP' | 'DELETE_GROUP' | 'REORDER_GROUPS' | 'ADD_MEMBER' | 'DELETE_MEMBER' | 'TRANSFER_MEMBER' | 'UPDATE_ALERTS' | 'REPLACE_GROUPS'
 
 type RedisEvaluator = {
   eval: (script: string, keys: string[], args: string[]) => Promise<unknown>
@@ -212,6 +214,20 @@ if ARGV[2] == 'UPDATE_ALERTS' then
   return persist({alerts = alerts})
 end
 
+if ARGV[2] == 'REORDER_GROUPS' then
+  if #payload.groupIds ~= #config.groups then return cjson.encode({status = 'ERROR', code = 'INVALID_PAYLOAD'}) end
+  local reordered = emptyArray()
+  local included = {}
+  for _, groupId in ipairs(payload.groupIds) do
+    if included[groupId] then return cjson.encode({status = 'ERROR', code = 'INVALID_PAYLOAD'}) end
+    local index = findGroupIndex(groupId)
+    if not index then return cjson.encode({status = 'ERROR', code = 'GROUP_NOT_FOUND'}) end
+    included[groupId] = true
+    table.insert(reordered, config.groups[index])
+  end
+  config.groups = reordered
+  return persist({groups = config.groups})
+end
 if ARGV[2] == 'REPLACE_GROUPS' then
   config.groups = payload.groups
   local activeSecurityIds = {}
@@ -308,6 +324,11 @@ export async function deleteStockGroup(userId: string, groupId: string, expected
   return { config: parseResponseConfig(response), group: response.result?.group }
 }
 
+export async function reorderStockGroups(userId: string, payload: ReorderStockGroupsPayload, expectedVersion: number) {
+  const input = reorderStockGroupsPayloadSchema.parse(payload)
+  const response = await execute(userId, 'REORDER_GROUPS', { groupIds: input.groupIds }, expectedVersion)
+  return { config: parseResponseConfig(response), groups: response.result?.groups ?? [] }
+}
 export async function addStockGroupMember(userId: string, groupId: string, payload: AddStockMemberPayload, expectedVersion: number) {
   const input = addStockMemberPayloadSchema.parse(payload)
   const response = await execute(userId, 'ADD_MEMBER', { groupId, member: input }, expectedVersion)
