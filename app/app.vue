@@ -5,7 +5,7 @@ useHead({
     { name: 'theme-color', content: '#0b2420' }
   ],
   link: [
-    { rel: 'icon', href: '/favicon.ico' }
+    { rel: 'icon', href: '/activity-heartbeat.svg' }
   ],
   htmlAttrs: {
     lang: 'zh-CN'

@@ -1,64 +1,119 @@
-# Nuxt Starter Template
+# ValueTicker
 
-[![Nuxt UI](https://img.shields.io/badge/Made%20with-Nuxt%20UI-00DC82?logo=nuxt&labelColor=020420)](https://ui.nuxt.com)
+> 面向 A 股、场内 ETF 与指数的浏览器端实时行情监测与价格提醒工具。
 
-Use this template to get started with [Nuxt UI](https://ui.nuxt.com) quickly.
+ValueTicker 采用“前端直连行情源、后端轻量保存配置”的架构：行情轮询、分时趋势、提醒判断与浏览器通知都在浏览器侧完成；服务端负责自选分组、提醒规则及市场成交额时段快照的持久化。
 
-- [Live demo](https://starter-template.nuxt.dev/)
-- [Documentation](https://ui.nuxt.com/docs/getting-started/installation/nuxt)
+![ValueTicker favicon](public/favicon.ico)
 
-<a href="https://starter-template.nuxt.dev/" target="_blank">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://ui.nuxt.com/assets/templates/nuxt/starter-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://ui.nuxt.com/assets/templates/nuxt/starter-light.png">
-    <img alt="Nuxt Starter Template" src="https://ui.nuxt.com/assets/templates/nuxt/starter-light.png" width="830" height="466">
-  </picture>
-</a>
+## 当前功能
 
-> The starter template for Vue is on https://github.com/nuxt-ui-templates/starter-vue.
+- 自选分组：创建、重命名、删除、导入/导出，以及分组和组内证券拖拽排序。
+- 证券管理：按代码或名称搜索，支持添加、删除、移动、复制；可显示创、科、北标签。
+- 行情监测：腾讯/东方财富主行情适配、手动刷新、暂停/继续、交易日历状态与非交易时段调度。
+- 分时趋势：普通 A 股、ETF 和常用指数优先走腾讯；北交所证券与韩国 KOSPI 走东方财富，以控制东财请求量。
+- 价格提醒：支持涨幅超过、跌幅超过、价格涨至、价格跌至；包含冷却时间、单日次数限制、站内提醒和浏览器通知。
+- 行情视图：名称/代码搜索、“只看提醒”筛选、行情健康度、Provider 延迟、提醒覆盖统计和移动端布局。
+- 市场概览：上证、深成、创业板、科创 50、韩国 KOSPI 的行情与趋势；三市成交额采用腾讯直连计算，支持午盘和收盘的昨日同期对比。
+- 提醒中心：展示当前会话内最近 20 条提醒，可清空站内记录。
 
-## Quick Start
+## 架构概览
 
-```bash [Terminal]
-npm create nuxt@latest -- -t ui
+```text
+浏览器（Nuxt / Vue / Pinia）
+  ├─ Web Worker：行情轮询、分时趋势、提醒判断
+  ├─ 腾讯 / 东方财富公开接口：浏览器直接请求
+  ├─ Browser Notification：系统通知
+  └─ Nitro API：配置 CRUD、成交额时段快照
+       └─ Upstash Redis：原子配置写入与快照封存
 ```
 
-## Deploy your own
+> 行情接口不经过本站服务端代理。关闭页面、浏览器休眠或后台冻结时，监测与通知可能停止；回到页面后会按当前策略重新拉取数据。
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-name=starter&repository-url=https%3A%2F%2Fgithub.com%2Fnuxt-ui-templates%2Fstarter&demo-image=https%3A%2F%2Fui.nuxt.com%2Fassets%2Ftemplates%2Fnuxt%2Fstarter-dark.png&demo-url=https%3A%2F%2Fstarter-template.nuxt.dev%2F&demo-title=Nuxt%20Starter%20Template&demo-description=A%20minimal%20template%20to%20get%20started%20with%20Nuxt%20UI.)
+## 开始使用
 
-## Setup
+### 环境要求
 
-Make sure to install the dependencies:
+- Node.js `>= 22.12.0`
+- pnpm `10.x`
+- 用于保存配置的 Upstash Redis（本地开发也需要）
+
+### 安装与启动
 
 ```bash
 pnpm install
 ```
 
-## Development Server
+在项目根目录创建 `.env.development.local`：
 
-Start the development server on `http://localhost:3000`:
+```bash
+UPSTASH_REDIS_REST_URL=https://your-database.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-token
+```
+
+也兼容 Vercel KV 的 `KV_REST_API_URL`、`KV_REST_API_TOKEN`，以及 Vercel Marketplace 注入的同前缀变量。
 
 ```bash
 pnpm dev
 ```
 
-## Production
+默认访问地址为 `http://localhost:3000`。
 
-Build the application for production:
-
-```bash
-pnpm build
-```
-
-Locally preview production build:
+## 常用命令
 
 ```bash
-pnpm preview
+pnpm dev        # 本地开发（自动读取 .env.development.local）
+pnpm typecheck  # Nuxt / TypeScript 类型检查
+pnpm lint       # ESLint
+pnpm test       # Vitest 单元测试
+pnpm build      # 生产构建
+pnpm preview    # 本地预览生产构建
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## 市场成交额快照规则
 
-## Renovate integration
+页面进入和手动刷新时，浏览器会请求腾讯的上证、深证、北证指数并合计三市成交额。服务端只保存三家交易所成交额、行情源更新时间和快照时间，不保存前端计算出的总额。
 
-Install [Renovate GitHub app](https://github.com/apps/renovate/installations/select_target) on your repository and you are good to go.
+- `11:30–13:00`：可申请更新午盘快照；`12:00` 后首笔有效请求封存该快照。
+- `15:00` 后：可申请更新收盘快照；`15:30` 后首笔有效请求封存该快照。
+- 快照按 `交易日 + MIDDAY/CLOSE` 独立保存；封存后重复请求只返回既有数据。
+- 页面展示总额使用万亿单位；与昨日同阶段的差额按亿/万亿自适应显示。
+
+## 数据源说明
+
+| 场景 | 当前策略 |
+| --- | --- |
+| 主行情 | 腾讯与东方财富可在设置中切换 |
+| 分时趋势（普通证券） | 腾讯 |
+| 分时趋势（北交所、韩国 KOSPI） | 东方财富 |
+| 三市成交额 | 腾讯 `sh000001,sz399001,bj899050` |
+| 证券搜索 | 腾讯优先，百度财经兜底 |
+
+公开行情接口的可用性、CORS、频率限制和字段口径可能变化；本项目不保证第三方免费接口在所有网络或生产域名下均可用。
+
+## 开发状态与限制
+
+- 当前 `requireUserId()` 使用 `local-dev-user` 作为开发占位身份。PRD 要求正式环境从服务端会话获取用户 ID，并实现真实登录、会话失效与数据隔离；这部分尚未接入。
+- 交易日历当前以工作日规则兜底，尚未接入年度法定交易日历文件。
+- 站内提醒仅保留当前页面会话；“清空”不会撤回已经发出的操作系统通知。
+- 轮询依赖浏览器页面运行，不提供云端持续监测、短信、邮件或自动交易能力。
+- 行情及成交额仅供学习与信息展示，不构成任何投资建议。
+
+## 目录结构
+
+```text
+app/
+  components/      # 页面组件、行情表格、提醒中心、分组与设置
+  composables/     # Worker 通信、浏览器通知
+  services/        # 行情 Provider 与 API 客户端
+  stores/          # 用户配置与实时市场状态
+  utils/           # 交易日历、提醒引擎、分时数据清洗
+  workers/         # 行情轮询与提醒判断 Worker
+server/
+  api/             # 配置、分组、提醒、成交额快照接口
+  services/        # Redis 原子存储、证券搜索
+  utils/           # Redis、API 响应与时段判断
+shared/
+  schemas/         # Zod 数据契约
+  types/           # 前后端共享类型
+```
