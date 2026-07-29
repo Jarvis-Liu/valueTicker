@@ -48,8 +48,12 @@ const selectedGroupId = ref('all')
 const quoteProvider = ref<QuoteProvider>('EASTMONEY')
 const pollingIntervalMs = useLocalStorage<number>('value-ticker:polling-interval-ms', 5000)
 const search = ref('')
+// 仅影响当前表格显示；完整证券集仍参与行情订阅和提醒判断。
+const onlyAlerted = ref(false)
 const paused = ref(false)
 const refreshing = ref(false)
+// 只用于首次配置加载与用户手动刷新；自动轮询不会遮挡主体内容。
+const contentLoading = ref(true)
 const alertOpen = ref(false)
 const alertNotificationsOpen = ref(false)
 const clearAlertNotificationsConfirmOpen = ref(false)
@@ -106,7 +110,7 @@ const visibleQuotes = computed(() => {
   const keyword = search.value.trim().toLowerCase()
   return configuredQuotes.value.filter((quote) => {
     const matches = !keyword || quote.name.toLowerCase().includes(keyword) || quote.code.includes(keyword)
-    return matches
+    return matches && (!onlyAlerted.value || quote.alertCount > 0)
   })
 })
 const lastUpdatedAt = computed(() => visibleQuotes.value[0]?.updatedAt ?? '待更新')
@@ -124,27 +128,31 @@ const marketIndexQuotes = computed<NormalizedQuote[]>(() =>
 )
 
 onMounted(async () => {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await userConfigStore.loadConfig()
-      // 页面进入只请求一次腾讯成交额；它不加入 5 秒行情轮询。
-      void refreshMarketTurnover()
-      if (enableQuoteWorker) {
-        quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value, activeAlerts.value, pollingIntervalMs.value)
-        monitorStarted = true
-        quoteMonitor.updateWindowActivity(isWindowActive())
-        quoteMonitor.updateTrendSecurities(trendSecurities.value)
-      }
-      return
-    } catch {
-      if (attempt < 2) {
-        await new Promise(resolve => window.setTimeout(resolve, 500 * (attempt + 1)))
-        continue
-      }
+  try {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await userConfigStore.loadConfig()
+        // 页面进入只请求一次腾讯成交额；它不加入 5 秒行情轮询。
+        void refreshMarketTurnover()
+        if (enableQuoteWorker) {
+          quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value, activeAlerts.value, pollingIntervalMs.value)
+          monitorStarted = true
+          quoteMonitor.updateWindowActivity(isWindowActive())
+          quoteMonitor.updateTrendSecurities(trendSecurities.value)
+        }
+        return
+      } catch {
+        if (attempt < 2) {
+          await new Promise(resolve => window.setTimeout(resolve, 500 * (attempt + 1)))
+          continue
+        }
 
-      marketStore.setStatus('ERROR', userConfigStore.errorMessage || '配置加载失败')
-      showSavedToast(userConfigStore.errorMessage || '配置加载失败')
+        marketStore.setStatus('ERROR', userConfigStore.errorMessage || '配置加载失败')
+        showSavedToast(userConfigStore.errorMessage || '配置加载失败')
+      }
     }
+  } finally {
+    contentLoading.value = false
   }
 })
 
@@ -253,11 +261,13 @@ function openAlert(quote: SecurityQuote) {
 function refresh() {
   if (refreshing.value) return
   refreshing.value = true
+  contentLoading.value = true
   quoteMonitor.forceRefresh()
   // 成交额按产品约定仅在页面进入与用户手动刷新时请求。
   void refreshMarketTurnover()
   window.setTimeout(() => {
     refreshing.value = false
+    contentLoading.value = false
   }, 700)
 }
 
@@ -591,7 +601,52 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
       </div>
     </div>
 
-    <main class="min-h-0 flex-1 overflow-y-auto px-3 pb-6 pt-4 sm:px-6 sm:pt-6">
+    <main class="relative min-h-0 flex-1 overflow-y-auto px-3 pb-6 pt-4 sm:px-6 sm:pt-6">
+      <div
+        v-if="contentLoading"
+        class="absolute inset-0 z-40 grid place-items-center bg-[#f7faf8]/90 backdrop-blur-[1px]"
+        role="status"
+        aria-live="polite"
+      >
+        <div class="flex flex-col items-center gap-3 rounded-2xl border border-slate-100 bg-white/95 px-6 py-5 shadow-xl shadow-slate-900/5">
+          <svg
+            class="value-ticker-loader h-12 w-12 overflow-visible"
+            viewBox="0 0 48 48"
+            aria-hidden="true"
+          >
+
+            <circle
+              class="value-ticker-loader__halo"
+              cx="24"
+              cy="24"
+              r="19"
+            />
+            <circle
+              class="value-ticker-loader__orbit"
+              cx="24"
+              cy="24"
+              r="15.5"
+            />
+            <path
+              class="value-ticker-loader__pulse value-ticker-loader__pulse--green"
+              d="M8 25h8l3.2-7.5"
+            />
+            <path
+              class="value-ticker-loader__pulse value-ticker-loader__pulse--red"
+              d="M19.2 17.5l4.3 15 3.5-10 2.5 2.5H40"
+            />
+            <circle
+              class="value-ticker-loader__dot"
+              cx="40"
+              cy="25"
+              r="2.5"
+            />
+          </svg>
+          <p class="text-xs font-medium text-slate-600">
+            {{ refreshing ? '正在刷新行情…' : '正在加载监测数据…' }}
+          </p>
+        </div>
+      </div>
       <div class="mx-auto min-h-full max-w-[1680px]">
         <div class="grid min-h-full min-w-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_280px]">
           <GroupSidebar
@@ -610,6 +665,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
           <div class="min-w-0 space-y-4">
             <QuoteMonitorPanel
               v-model:search="search"
+              v-model:only-alerted="onlyAlerted"
               :title="selectedGroup.name"
               :quotes="visibleQuotes"
               :trends="marketStore.intradayTrends"
@@ -756,3 +812,75 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
     </Transition>
   </div>
 </template>
+
+<style scoped>
+.value-ticker-loader__halo {
+  fill: rgba(16, 185, 129, 0.07);
+  stroke: rgba(16, 185, 129, 0.14);
+  stroke-width: 1;
+}
+
+.value-ticker-loader__orbit {
+  fill: none;
+  stroke: #10b981;
+  stroke-dasharray: 48 50;
+  stroke-linecap: round;
+  stroke-width: 2.25;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation:
+    value-ticker-loader-orbit 1.45s linear infinite,
+    value-ticker-loader-orbit-color 1.45s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+.value-ticker-loader__pulse {
+  fill: none;
+  stroke-dasharray: 43;
+  stroke-dashoffset: 43;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
+  animation: value-ticker-loader-pulse 2.25s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+.value-ticker-loader__pulse--green { stroke: #10b981; }
+.value-ticker-loader__pulse--red { stroke: #f43f5e; }
+
+.value-ticker-loader__dot {
+  fill: #6ee7b7;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: value-ticker-loader-dot 2.25s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+@keyframes value-ticker-loader-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes value-ticker-loader-orbit-color {
+  0%, 45% { stroke: #10b981; }
+  100% { stroke: #f43f5e; }
+}
+@keyframes value-ticker-loader-pulse {
+  0%, 12% { stroke-dashoffset: 43; opacity: 0.25; }
+  45%, 76% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: -43; opacity: 0.35; }
+}
+@keyframes value-ticker-loader-dot {
+  0%, 38% { fill: #6ee7b7; transform: scale(0.68); opacity: 0.35; }
+  58% { fill: #6ee7b7; transform: scale(1.2); opacity: 1; }
+  82% { fill: #fb7185; transform: scale(1); opacity: 1; }
+  100% { fill: #f43f5e; transform: scale(0.68); opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .value-ticker-loader__orbit,
+  .value-ticker-loader__pulse,
+  .value-ticker-loader__dot {
+    animation: none;
+  }
+
+  .value-ticker-loader__pulse {
+    stroke-dashoffset: 0;
+  }
+}
+</style>

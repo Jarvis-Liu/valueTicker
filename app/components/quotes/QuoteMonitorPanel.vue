@@ -21,6 +21,8 @@ const props = defineProps<{
 }>()
 
 const search = defineModel<string>('search', { default: '' })
+// 该筛选仅决定表格显示，页面仍将完整证券集发送给 Worker 轮询和提醒。
+const onlyAlerted = defineModel<boolean>('onlyAlerted', { default: false })
 const menuPositions = reactive<Record<string, { top: string, left: string }>>({})
 
 const emit = defineEmits<{
@@ -32,7 +34,9 @@ const emit = defineEmits<{
   reorder: [securityIds: string[]]
 }>()
 
-const sortable = computed(() => props.canRemove && !search.value)
+// 过滤后的列表不能用于持久化排序，避免把部分结果顺序误写回完整分组。
+const sortable = computed(() => props.canRemove && !search.value && !onlyAlerted.value)
+const emptyMessage = computed(() => onlyAlerted.value ? '没有已开启提醒的证券' : search.value.trim() ? '没有匹配的证券' : '暂无证券')
 
 function handleQuoteReorder(nextQuotes: SecurityQuote[]) {
   emit('reorder', nextQuotes.map(quote => quote.securityId))
@@ -114,13 +118,37 @@ function pad(value: number) {
             placeholder="搜索名称或代码"
           >
         </label>
-        <button
-          type="button"
-          class="icon-button"
-          aria-label="筛选行情"
+        <Menu
+          as="div"
+          class="relative shrink-0"
         >
-          <IconAdjustmentsHorizontal :size="18" />
-        </button>
+          <MenuButton
+            type="button"
+            class="icon-button border transition"
+            :class="onlyAlerted ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-transparent'"
+            :aria-label="onlyAlerted ? '筛选已启用：只看提醒' : '筛选行情'"
+            :aria-pressed="onlyAlerted"
+            title="筛选行情"
+          >
+            <IconAdjustmentsHorizontal :size="18" />
+          </MenuButton>
+          <MenuItems class="absolute right-0 top-[calc(100%+6px)] z-30 w-40 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl shadow-slate-900/10 focus:outline-none">
+            <MenuItem v-slot="{ active }">
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-slate-700"
+                :class="active && 'bg-slate-50'"
+                @click="onlyAlerted = !onlyAlerted"
+              >
+                <span
+                  class="grid h-4 w-4 place-items-center rounded border text-[10px]"
+                  :class="onlyAlerted ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-transparent'"
+                >✓</span>
+                只看提醒
+              </button>
+            </MenuItem>
+          </MenuItems>
+        </Menu>
         <button
           type="button"
           class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-[#123c34] px-3.5 text-xs font-semibold text-white transition hover:bg-[#0b2e28]"
@@ -346,7 +374,7 @@ function pad(value: number) {
               colspan="9"
               class="px-5 py-16 text-center text-sm text-slate-400"
             >
-              没有匹配的证券
+              {{ emptyMessage }}
             </td>
           </tr>
         </VueDraggable>
