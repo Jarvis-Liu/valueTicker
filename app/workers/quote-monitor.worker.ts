@@ -1,5 +1,6 @@
 import { fetchEastmoneyQuotes } from '../services/quotes/eastmoney.adapter'
 import { fetchTencentQuotes } from '../services/quotes/tencent.adapter'
+import { fetchEastmoneyIntradayTrend } from '../services/quotes/eastmoney-trends.adapter'
 import { fetchTencentIntradayTrend } from '../services/quotes/tencent-trends.adapter'
 import { evaluateQuoteAlerts } from '../utils/alert-engine'
 import { getMarketSessionState, getNextAutomaticRefreshAt, isContinuousAuction } from '../utils/market-calendar'
@@ -204,7 +205,11 @@ function fetchQuotes(nextSecurities: SecurityItem[]) {
 }
 
 function fetchIntradayTrend(security: SecurityItem) {
-  // 东财分时接口存在权限/Cookie 不稳定问题；趋势图统一走腾讯接口，主行情 Provider 切换不影响趋势源。
+  // 趋势图按证券路由：北交所和韩国 KOSPI 需要东财覆盖，其余证券优先腾讯，降低东财请求量与封禁风险。
+  // 主行情 Provider 的切换不影响这一独立趋势源策略。
+  if (security.exchange === 'BSE' || security.providerSymbols.eastmoney?.startsWith('100.') === true) {
+    return fetchEastmoneyIntradayTrend(security)
+  }
   return fetchTencentIntradayTrend(security)
 }
 
