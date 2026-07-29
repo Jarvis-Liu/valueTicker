@@ -17,6 +17,13 @@ export function getClientMarketTurnoverPhase(now = new Date()): MarketTurnoverPh
   return null
 }
 
+/** 返回尚未进入可对比时段时的页面提示文案。 */
+export function getMarketTurnoverComparisonHint(now = new Date()) {
+  const { weekday, seconds } = getShanghaiParts(now)
+  if (weekday === 0 || weekday === 6) return '下一交易日 11:30 后可对比午盘'
+  if (seconds >= 13 * 3600 && seconds < 15 * 3600) return '15:00 后可对比全天交易'
+  return '11:30 后可对比午盘'
+}
 export function getShanghaiTradeDate(now = new Date()) {
   return getShanghaiParts(now).tradeDate
 }

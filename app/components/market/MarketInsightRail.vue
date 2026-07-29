@@ -10,7 +10,7 @@ import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 import IntradayTrendSparkline from '~/components/quotes/IntradayTrendSparkline.vue'
 import type { NormalizedQuote, SecurityIntradayTrend } from '~/services/quotes/types'
 import type { AlertNotification, SecurityQuote } from '~/types/market'
-import type { MarketTurnoverDisplay } from '~/utils/market-turnover'
+import { getMarketTurnoverComparisonHint, type MarketTurnoverDisplay } from '~/utils/market-turnover'
 
 const props = defineProps<{
   notifications: AlertNotification[]
@@ -80,7 +80,7 @@ const marketTurnoverText = computed(() => props.marketTurnover ? formatTurnover(
 const marketTurnoverComparison = computed(() => {
   const current = props.marketTurnover
   const reference = current?.reference
-  if (!current || !reference) return current?.phase ? '同昨基准待生成' : '11:30 后可对比午盘'
+  if (!current || !reference) return current?.phase ? '同昨基准待生成' : getMarketTurnoverComparisonHint()
   const referenceTotal = reference.exchanges.sse + reference.exchanges.szse + reference.exchanges.bse
   const delta = current.total - referenceTotal
   const percent = referenceTotal === 0 ? 0 : delta / referenceTotal * 100

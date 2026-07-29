@@ -70,8 +70,8 @@ function toAlertNotification(event: QuoteAlertEvent): AlertNotification {
 
   return {
     id: event.id,
-    title: `${event.securityName}（${event.code}）${ruleName} ${event.rule.value}${unit}`,
-    detail: `当前价格 ${formatNumber(event.price)}，涨跌幅 ${formatSigned(event.changePercent)}%${event.rule.note ? `｜${event.rule.note}` : ''}`,
+    title: `${event.securityName}（${event.code}）${ruleName} ${formatRuleValue(event)}${unit}`,
+    detail: `当前价格 ${formatPrice(event.price, event.pricePrecision)}，涨跌幅 ${formatSigned(event.changePercent)}%${event.rule.note ? `｜${event.rule.note}` : ''}`,
     time: formatTime(event.triggeredAt),
     tone
   }
@@ -84,10 +84,14 @@ function getRuleName(type: QuoteAlertEvent['rule']['type']) {
   return '跌幅超过'
 }
 
-function formatNumber(value: number) {
-  return Number.isFinite(value) ? value.toFixed(2) : '--'
+/** 站内提醒与系统通知共用证券精度：普通证券两位，ETF 等三位。 */
+function formatPrice(value: number, precision: QuoteAlertEvent['pricePrecision']) {
+  return Number.isFinite(value) ? value.toFixed(precision) : '--'
 }
 
+function formatRuleValue(event: QuoteAlertEvent) {
+  return event.rule.type.startsWith('PRICE') ? formatPrice(event.rule.value, event.pricePrecision) : event.rule.value
+}
 function formatSigned(value: number) {
   if (!Number.isFinite(value)) return '--'
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}`

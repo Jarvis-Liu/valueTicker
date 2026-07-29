@@ -48,6 +48,8 @@ export interface QuoteAlertEvent {
   securityId: string
   securityName: string
   code: string
+  /** 使用证券配置精度展示提醒中的当前价和目标价。 */
+  pricePrecision: 2 | 3
   rule: AlertRule
   price: number
   changePercent: number

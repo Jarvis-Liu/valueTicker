@@ -43,12 +43,12 @@ export function useBrowserNotifications() {
 }
 
 function buildTitle(event: QuoteAlertEvent) {
-  return `${event.securityName}（${event.code}）${getRuleName(event.rule.type)} ${event.rule.value}${getRuleUnit(event.rule.type)}`
+  return `${event.securityName}（${event.code}）${getRuleName(event.rule.type)} ${formatRuleValue(event)}${getRuleUnit(event.rule.type)}`
 }
 
 function buildBody(event: QuoteAlertEvent) {
   const note = event.rule.note ? `｜${event.rule.note}` : ''
-  return `当前价格 ${formatNumber(event.price)}，涨跌幅 ${formatSigned(event.changePercent)}%${note}`
+  return `当前价格 ${formatPrice(event.price, event.pricePrecision)}，涨跌幅 ${formatSigned(event.changePercent)}%${note}`
 }
 
 function getRuleName(type: QuoteAlertEvent['rule']['type']) {
@@ -62,10 +62,14 @@ function getRuleUnit(type: QuoteAlertEvent['rule']['type']) {
   return type.startsWith('PRICE') ? '元' : '%'
 }
 
-function formatNumber(value: number) {
-  return Number.isFinite(value) ? value.toFixed(2) : '--'
+/** 价格类提醒按证券配置精度展示；ETF 的三位小数不会被截断。 */
+function formatPrice(value: number, precision: QuoteAlertEvent['pricePrecision']) {
+  return Number.isFinite(value) ? value.toFixed(precision) : '--'
 }
 
+function formatRuleValue(event: QuoteAlertEvent) {
+  return event.rule.type.startsWith('PRICE') ? formatPrice(event.rule.value, event.pricePrecision) : event.rule.value
+}
 function formatSigned(value: number) {
   if (!Number.isFinite(value)) return '--'
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}`

@@ -20,6 +20,7 @@ export function evaluateQuoteAlerts(
       securityId: quote.securityId,
       securityName: security.name,
       code: security.code,
+      pricePrecision: security.pricePrecision,
       rule,
       price: quote.price,
       changePercent: quote.changePercent,
