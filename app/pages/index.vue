@@ -14,7 +14,8 @@ import MarketInsightRail from '~/components/market/MarketInsightRail.vue'
 import TradingCalendarBar from '~/components/market/TradingCalendarBar.vue'
 import QuoteHealthCards from '~/components/quotes/QuoteHealthCards.vue'
 import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
-import type { SecurityQuote, WatchGroup } from '~/types/market'
+import IntradayTrendDialog from '~/components/quotes/IntradayTrendDialog.vue'
+import type { IntradayTrendTarget, SecurityQuote, WatchGroup } from '~/types/market'
 import type { NormalizedQuote, QuoteProvider } from '~/services/quotes/types'
 import type { AlertRule, SecurityItem, StockGroupsExportFile } from '~~/shared/types/stock'
 import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
@@ -55,6 +56,8 @@ const refreshing = ref(false)
 // 只用于首次配置加载与用户手动刷新；自动轮询不会遮挡主体内容。
 const contentLoading = ref(true)
 const alertOpen = ref(false)
+const intradayTrendDialogOpen = ref(false)
+const activeTrendTarget = ref<IntradayTrendTarget | null>(null)
 const alertNotificationsOpen = ref(false)
 const clearAlertNotificationsConfirmOpen = ref(false)
 const activeQuote = ref<SecurityQuote | null>(null)
@@ -119,6 +122,7 @@ const delayedQuoteCount = computed(() => configuredQuotes.value.filter(quote => 
 const quoteHealthPercent = computed(() => configuredQuotes.value.length ? healthyQuoteCount.value / configuredQuotes.value.length * 100 : null)
 const enabledAlertCount = computed(() => configuredQuotes.value.reduce((total, quote) => total + quote.alertCount, 0))
 const coveredAlertSecurityCount = computed(() => configuredQuotes.value.filter(quote => quote.alertCount > 0).length)
+const activeTrend = computed(() => activeTrendTarget.value ? marketStore.intradayTrends[activeTrendTarget.value.securityId] : undefined)
 const activeAlertRules = computed(() => activeQuote.value ? userConfigStore.config?.alerts[activeQuote.value.securityId]?.rules ?? [] : [])
 const activeAlerts = computed(() => userConfigStore.config?.alerts ?? {})
 const marketIndexQuotes = computed<NormalizedQuote[]>(() =>
@@ -256,6 +260,23 @@ function saveMonitorSettings(settings: { provider: QuoteProvider, pollingInterva
 function openAlert(quote: SecurityQuote) {
   activeQuote.value = quote
   alertOpen.value = true
+}
+
+/** 分时详情复用 Worker 已清洗的趋势快照，不产生新的行情请求。 */
+function openIntradayTrend(target: IntradayTrendTarget) {
+  activeTrendTarget.value = target
+  intradayTrendDialogOpen.value = true
+}
+
+function openMarketIndexTrend(securityId: string) {
+  const security = MARKET_INDEX_SECURITIES.find(item => item.securityId === securityId)
+  if (!security) return
+  openIntradayTrend({
+    securityId: security.securityId,
+    name: security.name,
+    code: security.code,
+    securityType: security.securityType
+  })
 }
 
 function refresh() {
@@ -677,6 +698,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               @move="openTransferDialog('MOVE', $event)"
               @copy="openTransferDialog('COPY', $event)"
               @reorder="reorderGroupMembers"
+              @trend-open="openIntradayTrend"
             />
 
             <QuoteHealthCards
@@ -697,6 +719,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               :watchlist-quotes="configuredQuotes"
               :market-turnover="marketTurnover"
               @clear-notifications="requestClearAlertNotifications"
+              @trend-open="openMarketIndexTrend"
             />
           </div>
         </div>
@@ -708,6 +731,13 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
       :notifications="marketStore.alertNotifications"
       @close="alertNotificationsOpen = false"
       @clear="requestClearAlertNotifications"
+    />
+
+    <IntradayTrendDialog
+      :open="intradayTrendDialogOpen"
+      :target="activeTrendTarget"
+      :trend="activeTrend"
+      @close="intradayTrendDialogOpen = false"
     />
 
     <AlertRuleDrawer

@@ -32,6 +32,7 @@ const emit = defineEmits<{
   move: [quote: SecurityQuote]
   copy: [quote: SecurityQuote]
   reorder: [securityIds: string[]]
+  trendOpen: [quote: SecurityQuote]
 }>()
 
 // 过滤后的列表不能用于持久化排序，避免把部分结果顺序误写回完整分组。
@@ -235,7 +236,11 @@ function pad(value: number) {
               </div>
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5">
-              <IntradayTrendSparkline :trend="trends[quote.securityId]" />
+              <IntradayTrendSparkline
+                :trend="trends[quote.securityId]"
+                interactive
+                @open="emit('trendOpen', quote)"
+              />
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5 text-right">
               <p

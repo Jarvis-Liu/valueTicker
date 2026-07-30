@@ -22,7 +22,7 @@ export async function fetchTencentMarketTurnover(): Promise<TencentMarketTurnove
     const body = new TextDecoder('gbk').decode(await response.arrayBuffer())
     // 腾讯会因网络/CDN 返回形态不同而以换行或连续赋值拼接多标的记录，不能仅按换行切分。
     const records = Array.from(body.matchAll(/v_([^=]+)="([^"]*)";?/g))
-      .map(([, symbol, payload]) => parseTencentTurnoverRecord(symbol, payload))
+      .map(match => parseTencentTurnoverRecord(match[1]!, match[2]!))
       .filter((record): record is { symbol: string, amount: number, updatedAt: string | null } => record !== null)
     const bySymbol = new Map(records.map(record => [record.symbol, record]))
     const sse = bySymbol.get('sh000001')

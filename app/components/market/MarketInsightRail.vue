@@ -22,6 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   clearNotifications: []
+  trendOpen: [securityId: string]
 }>()
 
 const notificationCountLabel = computed(() => props.notifications.length >= 20 ? '20+' : String(props.notifications.length))
@@ -155,7 +156,11 @@ function formatSignedTurnover(value: number) {
               {{ item.value }}
             </p>
           </div>
-          <IntradayTrendSparkline :trend="props.indexTrends[item.securityId]" />
+          <IntradayTrendSparkline
+            :trend="props.indexTrends[item.securityId]"
+            interactive
+            @open="emit('trendOpen', item.securityId)"
+          />
           <span
             class="inline-flex min-w-[58px] items-center justify-end gap-0.5 text-xs font-semibold tabular-number"
             :class="item.up === null ? 'text-slate-400' : item.up ? 'text-rose-600' : 'text-emerald-600'"

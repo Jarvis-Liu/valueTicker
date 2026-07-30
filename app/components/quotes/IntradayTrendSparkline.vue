@@ -3,6 +3,11 @@ import type { IntradayTrendPoint, SecurityIntradayTrend } from '~/services/quote
 
 const props = defineProps<{
   trend?: SecurityIntradayTrend
+  interactive?: boolean
+}>()
+
+const emit = defineEmits<{
+  open: []
 }>()
 
 const chartWidth = 96
@@ -62,11 +67,19 @@ function lastFinitePrice(points: IntradayTrendPoint[]) {
 </script>
 
 <template>
-  <div class="flex h-9 w-24 items-center justify-center">
+  <component
+    :is="interactive ? 'button' : 'div'"
+    :type="interactive ? 'button' : undefined"
+    class="flex h-9 w-24 items-center justify-center rounded-lg"
+    :class="interactive && 'group/chart outline-none transition hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1'"
+    :aria-label="interactive ? '打开当日分时详情' : undefined"
+    :title="interactive ? '查看当日分时详情' : undefined"
+    @click="interactive && emit('open')"
+  >
     <svg
       v-if="trend?.status === 'READY' && chartData?.pricePoints"
       :viewBox="`0 0 ${chartWidth} ${chartHeight}`"
-      class="h-8 w-24 overflow-visible"
+      class="h-8 w-24 overflow-visible transition-transform group-hover/chart:scale-[1.03]"
       aria-label="当日分时走势"
       role="img"
     >
@@ -100,8 +113,6 @@ function lastFinitePrice(points: IntradayTrendPoint[]) {
     <span
       v-else
       class="text-[11px] text-slate-300"
-    >
-      --
-    </span>
-  </div>
+    >--</span>
+  </component>
 </template>
