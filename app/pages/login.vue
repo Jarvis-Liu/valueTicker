@@ -43,7 +43,10 @@ async function sendEmailOtp() {
 
   try {
     const { error } = await supabase.auth.signInWithOtp({
-      email: normalizedEmail.value
+      email: normalizedEmail.value,
+      options: {
+        shouldCreateUser: true // 允许自动创建新用户
+      }
     })
     if (error) throw error
 
