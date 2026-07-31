@@ -5,7 +5,7 @@ import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
   try {
-    const userId = requireUserId()
+    const userId = await requireUserId(event)
     const expectedVersion = parseIfMatch(event)
     const payload = reorderStockGroupsPayloadSchema.parse(await readBody(event))
     const result = await reorderStockGroups(userId, payload, expectedVersion)

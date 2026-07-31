@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
       throw new ApiResponseError(422, 'INVALID_PAYLOAD', '缺少分组 ID')
     }
 
-    const userId = requireUserId()
+    const userId = await requireUserId(event)
     const expectedVersion = parseIfMatch(event)
     const result = await deleteStockGroup(userId, groupId, expectedVersion)
 

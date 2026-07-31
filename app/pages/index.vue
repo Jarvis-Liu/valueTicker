@@ -30,6 +30,8 @@ const userConfigStore = useUserConfigStore()
 const marketStore = useMarketStore()
 const quoteMonitor = useQuoteMonitor()
 const browserNotifications = useBrowserNotifications()
+const supabase = useSupabaseClient()
+const supabaseUser = useSupabaseUser()
 let monitorStarted = false
 // 页面直连测试已确认可用，恢复 Worker 行情轮询。
 const enableQuoteWorker = true
@@ -53,6 +55,7 @@ const search = ref('')
 const onlyAlerted = ref(false)
 const paused = ref(false)
 const refreshing = ref(false)
+const signingOut = ref(false)
 // 只用于首次配置加载与用户手动刷新；自动轮询不会遮挡主体内容。
 const contentLoading = ref(true)
 const alertOpen = ref(false)
@@ -78,6 +81,10 @@ const importedGroupsFile = ref<StockGroupsExportFile | null>(null)
 const importGroupsConfirmOpen = ref(false)
 const marketTurnover = ref<MarketTurnoverDisplay | null>(null)
 
+const userEmail = computed(() => {
+  const email = (supabaseUser.value as { email?: unknown } | null)?.email
+  return typeof email === 'string' ? email : ''
+})
 const groups = computed(() => userConfigStore.watchGroups)
 const selectedGroup = computed(() => groups.value.find(group => group.id === selectedGroupId.value) ?? groups.value[0]!)
 const addTargetGroup = computed(() => selectedGroupId.value === 'all'
@@ -328,6 +335,26 @@ function showSavedToast(message = '操作已完成') {
   }, 2200)
 }
 
+async function signOut() {
+  if (signingOut.value) return
+
+  signingOut.value = true
+  try {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
+
+    quoteMonitor.stop()
+    monitorStarted = false
+    userConfigStore.reset()
+    marketStore.reset()
+    selectedGroupId.value = 'all'
+    await navigateTo('/login', { replace: true })
+  } catch (error) {
+    showSavedToast(error instanceof Error ? error.message : '退出登录失败')
+  } finally {
+    signingOut.value = false
+  }
+}
 async function requestClearAlertNotifications() {
   if (marketStore.alertNotifications.length > 0) clearAlertNotificationsConfirmOpen.value = true
 }
@@ -605,12 +632,15 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         :refreshing="refreshing"
         :last-updated-at="lastUpdatedAt"
         :notification-count="marketStore.alertNotifications.length"
+        :user-email="userEmail"
+        :signing-out="signingOut"
         :status="marketStore.status"
         @provider-change="changeQuoteProvider"
         @toggle="toggleMonitor"
         @refresh="refresh"
         @settings="monitorSettingsOpen = true"
         @notifications="alertNotificationsOpen = true"
+        @sign-out="signOut"
       />
       <div class="border-b border-slate-200/70 bg-[#f3f6f4]/95 shadow-sm backdrop-blur">
         <div class="mx-auto max-w-[1680px] px-3 py-3 sm:px-6">

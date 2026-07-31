@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
     const groupId = getRouterParam(event, 'groupId')
     if (!groupId) throw new ApiResponseError(422, 'INVALID_PAYLOAD', '缺少分组 ID')
 
-    const userId = requireUserId()
+    const userId = await requireUserId(event)
     const expectedVersion = parseIfMatch(event)
     const payload = reorderStockGroupMembersPayloadSchema.parse(await readBody(event))
     const result = await reorderStockGroupMembers(userId, groupId, payload, expectedVersion)

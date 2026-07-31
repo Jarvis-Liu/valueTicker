@@ -12,7 +12,7 @@ import { requireUserId } from '~~/server/utils/require-user'
 export default defineEventHandler(async (event) => {
   try {
     // 保持与其余配置接口一致：仅已登录页面可读取或申请写入公共市场快照。
-    requireUserId()
+    await requireUserId(event)
     const payload = updateMarketTurnoverSnapshotPayloadSchema.parse(await readBody(event))
     const now = new Date()
     const window = getMarketTurnoverWindow(now)

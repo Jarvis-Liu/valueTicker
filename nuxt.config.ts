@@ -4,7 +4,8 @@ export default defineNuxtConfig({
     '@nuxt/eslint',
     '@pinia/nuxt',
     '@vueuse/nuxt',
-    '@nuxtjs/tailwindcss'
+    '@nuxtjs/tailwindcss',
+    '@nuxtjs/supabase'
   ],
 
   devtools: {
@@ -20,6 +21,20 @@ export default defineNuxtConfig({
         braceStyle: '1tbs'
       }
     }
+  },
+  supabase: {
+    redirect: true,
+    redirectOptions: {
+      login: '/login',
+      callback: '/auth/callback',
+      exclude: []
+    },
+    cookieOptions: {
+      maxAge: 60 * 60 * 8,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production'
+    },
+    types: false
   },
 
   tailwindcss: {

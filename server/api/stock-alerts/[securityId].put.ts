@@ -5,7 +5,7 @@ import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
   try {
-    const userId = requireUserId()
+    const userId = await requireUserId(event)
     const securityId = decodeURIComponent(String(event.context.params?.securityId ?? ''))
     const payload = updateStockAlertsPayloadSchema.parse(await readBody(event))
     const result = await updateStockAlerts(userId, securityId, payload, parseIfMatch(event))

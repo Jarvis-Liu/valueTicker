@@ -10,7 +10,7 @@ import { requireUserId } from '~~/server/utils/require-user'
 export default defineEventHandler(async (event) => {
   try {
     // 保持与其余配置接口一致：仅已登录页面可读取或申请写入公共市场快照。
-    requireUserId()
+    await requireUserId(event)
     const query = getQuery(event)
     const tradeDate = marketTurnoverTradeDateSchema.parse(query.tradeDate)
     return apiSuccess(await getMarketTurnoverDaySnapshots(tradeDate))

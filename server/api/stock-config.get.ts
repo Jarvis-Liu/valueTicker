@@ -4,7 +4,7 @@ import { getUserStockConfig } from '~~/server/services/user-stock-storage'
 
 export default defineEventHandler(async (event) => {
   try {
-    const userId = requireUserId()
+    const userId = await requireUserId(event)
     const config = await getUserStockConfig(userId)
 
     return apiSuccess(config, config.configVersion)

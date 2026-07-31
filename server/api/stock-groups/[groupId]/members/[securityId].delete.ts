@@ -4,7 +4,7 @@ import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
   try {
-    const userId = requireUserId()
+    const userId = await requireUserId(event)
     const groupId = String(event.context.params?.groupId ?? '')
     const securityId = decodeURIComponent(String(event.context.params?.securityId ?? ''))
     const result = await deleteStockGroupMember(userId, groupId, securityId, parseIfMatch(event))

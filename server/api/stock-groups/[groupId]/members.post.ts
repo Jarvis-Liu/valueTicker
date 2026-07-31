@@ -5,7 +5,7 @@ import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
   try {
-    const userId = requireUserId()
+    const userId = await requireUserId(event)
     const groupId = String(event.context.params?.groupId ?? '')
     const result = await addStockGroupMember(userId, groupId, addStockMemberPayloadSchema.parse(await readBody(event)), parseIfMatch(event))
     return apiSuccess(result, result.config.configVersion)

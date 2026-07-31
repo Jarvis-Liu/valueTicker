@@ -6,6 +6,7 @@ import {
   IconPlayerPause,
   IconPlayerPlay,
   IconRefresh,
+  IconLogout,
   IconSettings
 } from '@tabler/icons-vue'
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
@@ -19,6 +20,8 @@ const props = defineProps<{
   pollingIntervalMs: number
   lastUpdatedAt: string
   notificationCount: number
+  userEmail: string
+  signingOut?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -26,6 +29,7 @@ const emit = defineEmits<{
   refresh: []
   settings: []
   notifications: []
+  signOut: []
   providerChange: [provider: QuoteProvider]
 }>()
 
@@ -35,6 +39,10 @@ const providerOptions: Array<{ label: string, value: QuoteProvider }> = [
 ]
 const selectedProviderLabel = computed(() => {
   return providerOptions.find(option => option.value === props.provider)?.label ?? '行情源'
+})
+const userInitials = computed(() => {
+  const localPart = props.userEmail.split('@')[0]?.trim()
+  return localPart ? localPart.slice(0, 2).toUpperCase() : 'VT'
 })
 
 function changeProvider(provider: QuoteProvider) {
@@ -195,7 +203,7 @@ function changeProvider(provider: QuoteProvider) {
             class="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-slate-100 to-slate-300 text-xs font-bold text-slate-700 outline-none ring-offset-2 ring-offset-[#0b2420] transition hover:from-white hover:to-slate-200 focus-visible:ring-2 focus-visible:ring-emerald-300"
             aria-label="用户菜单"
           >
-            VT
+            {{ userInitials }}
           </MenuButton>
           <Transition
             enter-active-class="transition duration-150 ease-out"
@@ -205,7 +213,15 @@ function changeProvider(provider: QuoteProvider) {
             leave-from-class="translate-y-0 opacity-100"
             leave-to-class="translate-y-1 opacity-0"
           >
-            <MenuItems class="absolute right-0 top-[calc(100%+10px)] z-[90] w-40 origin-top-right overflow-hidden rounded-2xl border border-emerald-300/15 bg-[#102f2a] p-1 shadow-2xl shadow-slate-950/35 outline-none ring-1 ring-white/5">
+            <MenuItems class="absolute right-0 top-[calc(100%+10px)] z-[90] w-64 origin-top-right overflow-hidden rounded-2xl border border-emerald-300/15 bg-[#102f2a] p-1 shadow-2xl shadow-slate-950/35 outline-none ring-1 ring-white/5">
+              <div class="border-b border-white/10 px-3 py-2.5">
+                <p class="text-[10px] font-medium uppercase tracking-wider text-emerald-100/45">
+                  当前账号
+                </p>
+                <p class="mt-1 truncate text-xs font-semibold text-white">
+                  {{ userEmail || '已登录用户' }}
+                </p>
+              </div>
               <MenuItem
                 v-slot="{ active }"
                 :disabled="refreshing"
@@ -237,6 +253,22 @@ function changeProvider(provider: QuoteProvider) {
                     class="text-emerald-200"
                   />
                   监测设置
+                </button>
+              </MenuItem>
+              <div class="my-1 h-px bg-white/10" />
+              <MenuItem
+                v-slot="{ active }"
+                :disabled="signingOut"
+              >
+                <button
+                  type="button"
+                  class="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-rose-100/85 transition disabled:cursor-not-allowed disabled:opacity-55"
+                  :class="active && !signingOut && 'bg-rose-300/10 text-rose-50'"
+                  :disabled="signingOut"
+                  @click="$emit('signOut')"
+                >
+                  <IconLogout :size="16" />
+                  {{ signingOut ? '正在退出…' : '退出登录' }}
                 </button>
               </MenuItem>
             </MenuItems>

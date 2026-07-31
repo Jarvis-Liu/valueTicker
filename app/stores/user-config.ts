@@ -438,6 +438,13 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
+  function reset() {
+    config.value = null
+    loading.value = false
+    saving.value = false
+    errorMessage.value = ''
+  }
+
   return {
     config,
     loading,
@@ -455,7 +462,8 @@ export const useUserConfigStore = defineStore('user-config', () => {
     deleteMember,
     transferMember,
     saveSecurityAlerts,
-    replaceGroups
+    replaceGroups,
+    reset
   }
 })
 
