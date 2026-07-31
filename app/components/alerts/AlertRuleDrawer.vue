@@ -45,6 +45,24 @@ const ruleOptions: Array<{ id: AlertRuleType, name: string, hint: string, unit: 
 ]
 
 const enabledRuleCount = computed(() => localRules.value.filter(rule => rule.enabled).length)
+const pricePrecision = computed<2 | 3>(() => props.quote?.securityType === 'ETF' ? 3 : 2)
+/**
+ * 按 2026-07-06 起施行的交易规则估算股票涨跌停价：主板 10%、创/科 20%、北交所 30%。
+ * ETF 的限制比例取决于跟踪标的，当前证券模型无法准确识别，因此不做推算。
+ */
+const dailyPriceLimits = computed(() => {
+  const quote = props.quote
+  if (!quote || quote.securityType !== 'STOCK' || !Number.isFinite(quote.previousClose) || quote.previousClose <= 0) return null
+
+  const limitRate = quote.boardLabel === '创' || quote.boardLabel === '科'
+    ? 0.2
+    : quote.boardLabel === '北' ? 0.3 : 0.1
+
+  return {
+    upper: roundPrice(quote.previousClose * (1 + limitRate), pricePrecision.value),
+    lower: roundPrice(quote.previousClose * (1 - limitRate), pricePrecision.value)
+  }
+})
 
 watch(() => [props.open, props.quote?.securityId, props.rules] as const, () => {
   if (!props.open) return
@@ -56,6 +74,10 @@ watch(() => [props.open, props.quote?.securityId, props.rules] as const, () => {
     addRule()
   }
 }, { immediate: true, deep: true })
+
+function roundPrice(value: number, precision: 2 | 3) {
+  return Number(value.toFixed(precision))
+}
 
 function addRule() {
   if (localRules.value.length >= 8) {
@@ -184,25 +206,49 @@ function getRuleOption(type: AlertRuleType) {
                   <div class="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
                     <div
                       v-if="quote"
-                      class="mb-5 flex items-end justify-between rounded-2xl bg-[#0f332c] px-4 py-4 text-white"
+                      class="mb-5 rounded-2xl bg-[#0f332c] px-4 py-4 text-white"
                     >
-                      <div>
-                        <p class="text-[11px] text-emerald-100/60">
-                          当前价格
-                        </p>
-                        <p class="mt-1 text-2xl font-semibold tabular-number">
-                          {{ Number.isFinite(quote.price) ? quote.price.toFixed(quote.securityType === 'ETF' ? 3 : 2) : '--' }}
+                      <div class="flex items-end justify-between gap-4">
+                        <div>
+                          <p class="text-[11px] text-emerald-100/60">
+                            当前价格
+                          </p>
+                          <p class="mt-1 text-2xl font-semibold tabular-number">
+                            {{ Number.isFinite(quote.price) ? quote.price.toFixed(pricePrecision) : '--' }}
+                          </p>
+                        </div>
+                        <p
+                          class="text-sm font-semibold tabular-number"
+                          :class="quote.change >= 0 ? 'text-rose-300' : 'text-emerald-300'"
+                        >
+                          {{ quote.change >= 0 ? '+' : '' }}{{ Number.isFinite(quote.changePercent) ? quote.changePercent.toFixed(2) : '--' }}%
                         </p>
                       </div>
-                      <p
-                        class="text-sm font-semibold tabular-number"
-                        :class="quote.change >= 0 ? 'text-rose-300' : 'text-emerald-300'"
-                      >
-                        {{ quote.change >= 0 ? '+' : '' }}{{ Number.isFinite(quote.changePercent) ? quote.changePercent.toFixed(2) : '--' }}%
+
+                      <div class="mt-4 grid grid-cols-2 gap-3 border-t border-white/10 pt-3">
+                        <div>
+                          <p class="text-[11px] text-rose-100/60">
+                            涨停价
+                          </p>
+                          <p class="mt-1 text-base font-semibold text-rose-300 tabular-number">
+                            {{ dailyPriceLimits ? dailyPriceLimits.upper.toFixed(pricePrecision) : '--' }}
+                          </p>
+                        </div>
+                        <div class="border-l border-white/10 pl-3">
+                          <p class="text-[11px] text-emerald-100/60">
+                            跌停价
+                          </p>
+                          <p class="mt-1 text-base font-semibold text-emerald-300 tabular-number">
+                            {{ dailyPriceLimits ? dailyPriceLimits.lower.toFixed(pricePrecision) : '--' }}
+                          </p>
+                        </div>
+                      </div>
+                      <p class="mt-2 text-[10px] text-emerald-100/45">
+                        {{ quote.securityType === 'ETF' ? 'ETF 涨跌幅限制取决于跟踪标的，当前暂不估算' : '按昨收与当前板块涨跌幅规则计算' }}
                       </p>
                     </div>
 
-                    <div class="mb-4 flex items-center justify-between">
+                    <div class="mb-4 flex gap-2 items-center justify-between">
                       <div>
                         <p class="text-sm font-semibold text-slate-900">
                           规则列表

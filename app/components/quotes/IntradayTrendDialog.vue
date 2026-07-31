@@ -25,6 +25,12 @@ const change = computed(() => {
   const value = latestPrice.value! - props.trend.previousClose
   return { value, percent: value / props.trend.previousClose * 100 }
 })
+/** 高低价以清洗后的有效分钟价格计算，确保不同趋势 Provider 的口径一致。 */
+const dailyPriceRange = computed(() => {
+  const prices = (props.trend?.points ?? []).map(point => point.price).filter((price): price is number => Number.isFinite(price))
+  if (!prices.length) return null
+  return { high: Math.max(...prices), low: Math.min(...prices) }
+})
 const toneClass = computed(() => change.value?.value && change.value.value < 0 ? 'text-emerald-600' : 'text-rose-600')
 const providerName = computed(() => props.trend?.provider === 'EASTMONEY' ? '东方财富' : '腾讯')
 const hasData = computed(() => props.trend?.status === 'READY' && latestPrice.value !== null)
@@ -98,7 +104,7 @@ function formatUpdatedAt(value: string | undefined) {
                 </p>
               </div>
               <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                <span>昨收 <strong class="ml-1 font-semibold text-slate-700 tabular-number">{{ Number.isFinite(trend?.previousClose) ? trend!.previousClose.toFixed(pricePrecision) : '--' }}</strong></span><span class="inline-flex items-center gap-1"><IconDatabase :size="13" />{{ providerName }} · {{ formatUpdatedAt(trend?.updatedAt) }}</span>
+                <span>最高 <strong class="ml-1 font-semibold text-rose-600 tabular-number">{{ dailyPriceRange?.high.toFixed(pricePrecision) ?? '--' }}</strong></span><span>最低 <strong class="ml-1 font-semibold text-emerald-600 tabular-number">{{ dailyPriceRange?.low.toFixed(pricePrecision) ?? '--' }}</strong></span><span>昨收 <strong class="ml-1 font-semibold text-slate-700 tabular-number">{{ Number.isFinite(trend?.previousClose) ? trend!.previousClose.toFixed(pricePrecision) : '--' }}</strong></span><span class="inline-flex items-center gap-1"><IconDatabase :size="13" />{{ providerName }} · {{ formatUpdatedAt(trend?.updatedAt) }}</span>
               </div>
             </div>
             <div class="relative flex-1 px-2 py-2 sm:px-4 sm:py-4">
@@ -120,7 +126,7 @@ function formatUpdatedAt(value: string | undefined) {
               </div>
             </div>
             <div class="border-t border-slate-100 px-4 py-3 text-[11px] text-slate-400 sm:px-6">
-              价格线以昨收为中心对称缩放；可拖拽平移、滚轮或双指缩放，并悬停查看分钟数据。
+              价格线以昨收为中心对称缩放，并标注当日最高/最低；可拖拽平移、滚轮或双指缩放，并悬停查看分钟数据。
             </div>
           </DialogPanel>
         </TransitionChild>
