@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import {
   IconAdjustmentsHorizontal,
+  IconArrowsSort,
   IconBellRinging,
   IconDots,
   IconPlus,
-  IconSearch
+  IconSearch,
+  IconSortAscending,
+  IconSortDescending
 } from '@tabler/icons-vue'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { VueDraggable } from 'vue-draggable-plus'
@@ -24,6 +27,8 @@ const search = defineModel<string>('search', { default: '' })
 // 该筛选仅决定表格显示，页面仍将完整证券集发送给 Worker 轮询和提醒。
 const onlyAlerted = defineModel<boolean>('onlyAlerted', { default: false })
 const menuPositions = reactive<Record<string, { top: string, left: string }>>({})
+type ChangePercentSort = 'default' | 'descending' | 'ascending'
+const changePercentSort = ref<ChangePercentSort>('default')
 
 const emit = defineEmits<{
   alert: [quote: SecurityQuote]
@@ -35,12 +40,41 @@ const emit = defineEmits<{
   trendOpen: [quote: SecurityQuote]
 }>()
 
-// 过滤后的列表不能用于持久化排序，避免把部分结果顺序误写回完整分组。
-const sortable = computed(() => props.canRemove && !search.value && !onlyAlerted.value)
+// 筛选或涨跌幅排序后的列表不能用于持久化拖拽，避免把临时展示顺序误写回完整分组。
+const sortable = computed(() => props.canRemove && !search.value && !onlyAlerted.value && changePercentSort.value === 'default')
+const displayedQuotes = computed(() => {
+  if (changePercentSort.value === 'default') return props.quotes
+
+  const direction = changePercentSort.value === 'descending' ? -1 : 1
+  return props.quotes
+    .map((quote, originalIndex) => ({ quote, originalIndex }))
+    .sort((left, right) => {
+      const leftValue = left.quote.changePercent
+      const rightValue = right.quote.changePercent
+      const leftValid = Number.isFinite(leftValue)
+      const rightValid = Number.isFinite(rightValue)
+
+      if (!leftValid && !rightValid) return left.originalIndex - right.originalIndex
+      if (!leftValid) return 1
+      if (!rightValid) return -1
+      return (leftValue - rightValue) * direction || left.originalIndex - right.originalIndex
+    })
+    .map(item => item.quote)
+})
+const changePercentSortLabel = computed(() => {
+  if (changePercentSort.value === 'descending') return '涨幅从高到低；点击切换为从低到高'
+  if (changePercentSort.value === 'ascending') return '涨幅从低到高；点击恢复默认顺序'
+  return '按涨跌幅排序；点击后涨幅从高到低'
+})
 const emptyMessage = computed(() => onlyAlerted.value ? '没有已开启提醒的证券' : search.value.trim() ? '没有匹配的证券' : '暂无证券')
 
 function handleQuoteReorder(nextQuotes: SecurityQuote[]) {
   emit('reorder', nextQuotes.map(quote => quote.securityId))
+}
+function toggleChangePercentSort() {
+  changePercentSort.value = changePercentSort.value === 'default'
+    ? 'descending'
+    : changePercentSort.value === 'descending' ? 'ascending' : 'default'
 }
 function positionMenu(securityId: string, event: MouseEvent) {
   const button = event.currentTarget as HTMLElement
@@ -175,7 +209,28 @@ function pad(value: number) {
               最新价
             </th>
             <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
-              涨跌幅
+              <button
+                type="button"
+                class="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 transition hover:bg-slate-100 hover:text-slate-700"
+                :class="changePercentSort !== 'default' && 'bg-emerald-50 text-emerald-700'"
+                :title="changePercentSortLabel"
+                :aria-label="changePercentSortLabel"
+                @click="toggleChangePercentSort"
+              >
+                涨跌幅
+                <IconArrowsSort
+                  v-if="changePercentSort === 'default'"
+                  :size="14"
+                />
+                <IconSortDescending
+                  v-else-if="changePercentSort === 'descending'"
+                  :size="14"
+                />
+                <IconSortAscending
+                  v-else
+                  :size="14"
+                />
+              </button>
             </th>
             <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
               今开
@@ -199,7 +254,7 @@ function pad(value: number) {
         </thead>
         <VueDraggable
           tag="tbody"
-          :model-value="quotes"
+          :model-value="displayedQuotes"
           handle=".quote-drag-handle"
           :disabled="!sortable"
           :animation="150"
@@ -208,7 +263,7 @@ function pad(value: number) {
           @update:model-value="handleQuoteReorder"
         >
           <tr
-            v-for="quote in quotes"
+            v-for="quote in displayedQuotes"
             :key="quote.securityId"
             class="group transition hover:bg-slate-50/80"
           >
@@ -374,9 +429,9 @@ function pad(value: number) {
               </div>
             </td>
           </tr>
-          <tr v-if="quotes.length === 0">
+          <tr v-if="displayedQuotes.length === 0">
             <td
-              colspan="9"
+              colspan="10"
               class="px-5 py-16 text-center text-sm text-slate-400"
             >
               {{ emptyMessage }}
