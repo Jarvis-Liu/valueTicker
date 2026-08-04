@@ -303,22 +303,23 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
-  async function saveSecurityAlerts(securityId: string, rules: AlertRule[]) {
+  async function saveSecurityAlerts(securityId: string, rules: AlertRule[], costPrice?: number | null) {
     await ensureConfigLoaded()
     const snapshot = cloneUserStockConfig(config.value!)
+    const nextCostPrice = costPrice === undefined ? snapshot.alerts[securityId]?.costPrice ?? null : costPrice
 
     saving.value = true
     errorMessage.value = ''
 
     try {
-      const result = await updateStockAlertsRequest(securityId, rules, snapshot.configVersion)
+      const result = await updateStockAlertsRequest(securityId, rules, nextCostPrice, snapshot.configVersion)
       config.value = result.config
       return result.alerts
     } catch (error) {
       config.value = snapshot
 
       if (isVersionConflict(error)) {
-        return await retrySaveSecurityAlertsAfterConflict(securityId, rules)
+        return await retrySaveSecurityAlertsAfterConflict(securityId, rules, nextCostPrice)
       }
 
       errorMessage.value = getErrorMessage(error)
@@ -414,12 +415,12 @@ export const useUserConfigStore = defineStore('user-config', () => {
     }
   }
 
-  async function retrySaveSecurityAlertsAfterConflict(securityId: string, rules: AlertRule[]) {
+  async function retrySaveSecurityAlertsAfterConflict(securityId: string, rules: AlertRule[], costPrice: number | null) {
     await loadConfig()
     if (!config.value) throw new Error('鐢ㄦ埛閰嶇疆灏氭湭鍔犺浇')
 
     try {
-      const result = await updateStockAlertsRequest(securityId, rules, config.value.configVersion)
+      const result = await updateStockAlertsRequest(securityId, rules, costPrice, config.value.configVersion)
       config.value = result.config
       return result.alerts
     } catch (error) {

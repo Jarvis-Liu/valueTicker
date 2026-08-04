@@ -141,12 +141,12 @@ export async function transferStockMemberRequest(groupId: string, securityId: st
   })
 }
 
-/** 保存或清空单只证券的提醒规则配置。 */
-export async function updateStockAlertsRequest(securityId: string, rules: AlertRule[], configVersion: number) {
+/** 保存或清空单只证券的提醒规则及仅供视觉参考的成本价。 */
+export async function updateStockAlertsRequest(securityId: string, rules: AlertRule[], costPrice: number | null, configVersion: number) {
   return requestApi<UpdateStockAlertsResult>(`/api/stock-alerts/${encodeURIComponent(securityId)}`, {
     method: 'PUT',
     headers: { 'If-Match': String(configVersion) },
-    body: { rules }
+    body: { rules, costPrice }
   })
 }
 

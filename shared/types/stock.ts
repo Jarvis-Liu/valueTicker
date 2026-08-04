@@ -53,6 +53,7 @@ export interface AlertRule {
 export interface SecurityAlerts {
   securityId: string
   rules: AlertRule[]
+  costPrice?: number
   updatedAt: string
 }
 

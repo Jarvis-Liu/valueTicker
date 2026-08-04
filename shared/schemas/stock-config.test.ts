@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_GROUP_ID, STOCK_CONFIG_SCHEMA_VERSION } from '../constants/stock'
-import { createStockGroupPayloadSchema, stockGroupsExportFileSchema, userStockConfigSchema } from './stock-config'
+import { createStockGroupPayloadSchema, stockGroupsExportFileSchema, updateStockAlertsPayloadSchema, userStockConfigSchema } from './stock-config'
 
 describe('stock config schema', () => {
   it('accepts a valid default config', () => {
@@ -57,6 +57,12 @@ describe('stock config schema', () => {
     expect(createStockGroupPayloadSchema.safeParse({ name: '核心资产' }).success).toBe(true)
     expect(createStockGroupPayloadSchema.safeParse({ name: '' }).success).toBe(false)
     expect(createStockGroupPayloadSchema.safeParse({ name: '一二三四五六七八九十一二三四五六七八九十一' }).success).toBe(false)
+  })
+
+  it('accepts a positive visual-reference cost price', () => {
+    expect(updateStockAlertsPayloadSchema.safeParse({ rules: [], costPrice: 12.345 }).success).toBe(true)
+    expect(updateStockAlertsPayloadSchema.safeParse({ rules: [], costPrice: null }).success).toBe(true)
+    expect(updateStockAlertsPayloadSchema.safeParse({ rules: [], costPrice: 0 }).success).toBe(false)
   })
 
   it('accepts an export file with one default group', () => {

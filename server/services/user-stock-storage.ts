@@ -206,9 +206,14 @@ if ARGV[2] == 'UPDATE_ALERTS' then
     if member then exists = true; break end
   end
   if not exists then return cjson.encode({status = 'ERROR', code = 'SECURITY_NOT_FOUND'}) end
+  local existingAlerts = config.alerts[payload.securityId]
+  local costPrice = payload.costPrice
+  if costPrice == nil and existingAlerts then costPrice = existingAlerts.costPrice end
+  local hasCostPrice = costPrice ~= nil and costPrice ~= cjson.null
   local alerts = cjson.null
-  if #payload.rules > 0 then
+  if #payload.rules > 0 or hasCostPrice then
     alerts = {securityId = payload.securityId, rules = payload.rules, updatedAt = now}
+    if hasCostPrice then alerts.costPrice = costPrice end
     config.alerts[payload.securityId] = alerts
   else
     config.alerts[payload.securityId] = nil
@@ -374,7 +379,7 @@ export async function transferStockGroupMember(userId: string, groupId: string, 
 
 export async function updateStockAlerts(userId: string, securityId: string, payload: UpdateStockAlertsPayload, expectedVersion: number) {
   const input = updateStockAlertsPayloadSchema.parse(payload)
-  const response = await execute(userId, 'UPDATE_ALERTS', { securityId, rules: input.rules }, expectedVersion)
+  const response = await execute(userId, 'UPDATE_ALERTS', { securityId, rules: input.rules, costPrice: input.costPrice }, expectedVersion)
   return { config: parseResponseConfig(response), alerts: response.result?.alerts ?? null }
 }
 

@@ -74,13 +74,18 @@ describe('user stock KV storage', () => {
     await addStockGroupMember('local-dev-user', DEFAULT_GROUP_ID, member, 1)
     await deleteStockGroupMember('local-dev-user', DEFAULT_GROUP_ID, member.securityId, 1)
     await transferStockGroupMember('local-dev-user', DEFAULT_GROUP_ID, member.securityId, { targetGroupId: 'group_other', mode: 'COPY' }, 1)
-    await updateStockAlerts('local-dev-user', member.securityId, { rules: [] }, 1)
+    await updateStockAlerts('local-dev-user', member.securityId, { rules: [], costPrice: 10.25 }, 1)
 
     const calls = redis.eval.mock.calls as [string, string[], string[]][]
     expect(calls.map(call => call[2][1])).toEqual([
       'CREATE_GROUP', 'RENAME_GROUP', 'DELETE_GROUP', 'ADD_MEMBER', 'DELETE_MEMBER', 'TRANSFER_MEMBER', 'UPDATE_ALERTS'
     ])
     for (const call of calls) expect(call[2][3]).toBe('1')
+    expect(JSON.parse(calls.at(-1)![2][2] ?? '{}')).toMatchObject({
+      securityId: member.securityId,
+      rules: [],
+      costPrice: 10.25
+    })
   })
 
   it('preserves version-conflict and storage-corruption error mappings', async () => {

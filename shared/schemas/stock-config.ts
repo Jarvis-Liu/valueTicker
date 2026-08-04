@@ -47,6 +47,7 @@ export const alertRuleSchema = z.object({
 export const securityAlertsSchema = z.object({
   securityId: z.string().min(1),
   rules: z.array(alertRuleSchema),
+  costPrice: z.number().positive().optional(),
   updatedAt: z.string().datetime()
 })
 
@@ -123,7 +124,8 @@ export const transferStockMemberPayloadSchema = z.object({
   mode: z.enum(['MOVE', 'COPY'])
 })
 export const updateStockAlertsPayloadSchema = z.object({
-  rules: z.array(alertRuleSchema).max(8)
+  rules: z.array(alertRuleSchema).max(8),
+  costPrice: z.number().positive().nullable().optional()
 })
 
 export const stockGroupsExportFileSchema = z.object({

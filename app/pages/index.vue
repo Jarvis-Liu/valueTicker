@@ -774,6 +774,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
       :open="alertOpen"
       :quote="activeQuote"
       :rules="activeAlertRules"
+      :cost-price="activeQuote ? activeAlerts[activeQuote.securityId]?.costPrice : null"
       :saving="userConfigStore.saving"
       @close="alertOpen = false"
       @save="saveAlertRules"

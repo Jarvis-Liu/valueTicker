@@ -13,8 +13,10 @@ import {
 } from '@headlessui/vue'
 import {
   IconBellRinging,
+  IconCheck,
   IconChevronDown,
   IconInfoCircle,
+  IconPencil,
   IconPlus,
   IconTrash,
   IconX
@@ -26,6 +28,7 @@ const props = defineProps<{
   open: boolean
   quote: SecurityQuote | null
   rules?: AlertRule[]
+  costPrice?: number | null
   saving?: boolean
 }>()
 
@@ -34,8 +37,14 @@ const emit = defineEmits<{
   save: [rules: AlertRule[]]
 }>()
 
+const userConfigStore = useUserConfigStore()
 const localRules = ref<AlertRule[]>([])
 const validationMessage = ref('')
+const displayCostPrice = ref<number | null>(null)
+const costPriceDraft = ref('')
+const costPriceError = ref('')
+const isEditingCostPrice = ref(false)
+const costPriceInput = ref<HTMLInputElement | null>(null)
 
 const ruleOptions: Array<{ id: AlertRuleType, name: string, hint: string, unit: string }> = [
   { id: 'PRICE_UPPER', name: '价格涨至', hint: '当前价大于等于目标价时提醒', unit: '元' },
@@ -64,19 +73,76 @@ const dailyPriceLimits = computed(() => {
   }
 })
 
-watch(() => [props.open, props.quote?.securityId, props.rules] as const, () => {
+watch(() => [props.open, props.quote?.securityId] as const, () => {
   if (!props.open) return
 
   localRules.value = cloneRules(props.rules ?? [])
   validationMessage.value = ''
+  loadCostPrice()
 
   if (localRules.value.length === 0) {
     addRule()
   }
-}, { immediate: true, deep: true })
+}, { immediate: true })
 
 function roundPrice(value: number, precision: 2 | 3) {
   return Number(value.toFixed(precision))
+}
+
+function loadCostPrice() {
+  isEditingCostPrice.value = false
+  costPriceError.value = ''
+  costPriceDraft.value = ''
+  displayCostPrice.value = null
+
+  const configuredCostPrice = Number(props.costPrice)
+  if (Number.isFinite(configuredCostPrice) && configuredCostPrice > 0) {
+    displayCostPrice.value = configuredCostPrice
+    costPriceDraft.value = configuredCostPrice.toFixed(pricePrecision.value)
+  }
+}
+
+async function editCostPrice() {
+  costPriceDraft.value = displayCostPrice.value?.toFixed(pricePrecision.value) ?? ''
+  costPriceError.value = ''
+  isEditingCostPrice.value = true
+  await nextTick()
+  costPriceInput.value?.focus()
+  costPriceInput.value?.select()
+}
+
+function cancelCostPriceEdit() {
+  costPriceDraft.value = displayCostPrice.value?.toFixed(pricePrecision.value) ?? ''
+  costPriceError.value = ''
+  isEditingCostPrice.value = false
+}
+
+async function saveCostPrice() {
+  if (!props.quote?.securityId || props.saving) return
+  const trimmedValue = costPriceDraft.value.trim()
+  const nextCostPrice = trimmedValue ? Number(trimmedValue) : null
+  if (nextCostPrice !== null && (!Number.isFinite(nextCostPrice) || nextCostPrice <= 0)) {
+    costPriceError.value = '请输入大于 0 的价格'
+    return
+  }
+
+  const normalizedCostPrice = nextCostPrice === null ? null : roundPrice(nextCostPrice, pricePrecision.value)
+  const previousCostPrice = displayCostPrice.value
+  displayCostPrice.value = normalizedCostPrice
+  costPriceDraft.value = normalizedCostPrice?.toFixed(pricePrecision.value) ?? ''
+  costPriceError.value = ''
+  isEditingCostPrice.value = false
+
+  try {
+    await userConfigStore.saveSecurityAlerts(props.quote.securityId, props.rules ?? [], normalizedCostPrice)
+  } catch {
+    displayCostPrice.value = previousCostPrice
+    costPriceDraft.value = normalizedCostPrice?.toFixed(pricePrecision.value) ?? ''
+    isEditingCostPrice.value = true
+    costPriceError.value = userConfigStore.errorMessage || '成本价保存失败'
+    await nextTick()
+    costPriceInput.value?.focus()
+  }
 }
 
 function addRule() {
@@ -225,7 +291,7 @@ function getRuleOption(type: AlertRuleType) {
                         </p>
                       </div>
 
-                      <div class="mt-4 grid grid-cols-2 gap-3 border-t border-white/10 pt-3">
+                      <div class="mt-4 grid grid-cols-3 gap-2 border-t border-white/10 pt-3 sm:gap-3">
                         <div>
                           <p class="text-[11px] text-rose-100/60">
                             涨停价
@@ -242,9 +308,70 @@ function getRuleOption(type: AlertRuleType) {
                             {{ dailyPriceLimits ? dailyPriceLimits.lower.toFixed(pricePrecision) : '--' }}
                           </p>
                         </div>
+                        <div class="border-l border-white/10 pl-2 sm:pl-3">
+                          <p class="text-[11px] text-amber-100/60">
+                            成本价
+                          </p>
+                          <div
+                            v-if="isEditingCostPrice"
+                            class="mt-1"
+                          >
+                            <div class="flex h-8 items-center overflow-hidden rounded-lg border border-amber-300/70 bg-slate-950/20 pl-2 shadow-[0_0_0_2px_rgba(252,211,77,0.10)] transition focus-within:border-amber-200 focus-within:bg-slate-950/30 focus-within:shadow-[0_0_0_3px_rgba(252,211,77,0.14)]">
+                              <input
+                                ref="costPriceInput"
+                                v-model="costPriceDraft"
+                                type="text"
+                                inputmode="decimal"
+                                autocomplete="off"
+                                aria-label="输入成本价"
+                                class="h-full w-0 min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-sm font-semibold text-white tabular-number outline-none ring-0 placeholder:text-white/25 focus:border-0 focus:outline-none focus:ring-0"
+                                :placeholder="pricePrecision === 3 ? '0.000' : '0.00'"
+                                :disabled="saving"
+                                @keydown.enter.prevent="saveCostPrice"
+                                @keydown.esc.prevent="cancelCostPriceEdit"
+                              >
+                              <span class="px-1 text-[10px] font-medium text-amber-100/50">元</span>
+                              <button
+                                type="button"
+                                class="grid h-full w-8 shrink-0 place-items-center border-l border-amber-200/15 bg-amber-300/10 text-amber-200 transition hover:bg-amber-300/20 hover:text-amber-100 disabled:cursor-wait disabled:opacity-50"
+                                aria-label="保存成本价"
+                                :disabled="saving"
+                                @click="saveCostPrice"
+                              >
+                                <IconCheck :size="15" />
+                              </button>
+                            </div>
+                            <p
+                              v-if="costPriceError"
+                              class="mt-1 text-[9px] text-amber-200"
+                            >
+                              {{ costPriceError }}
+                            </p>
+                          </div>
+                          <button
+                            v-else-if="displayCostPrice !== null"
+                            type="button"
+                            class="mt-0.5 -ml-1 rounded-lg border border-transparent px-1 py-0.5 text-left text-base font-semibold text-amber-200 tabular-number transition hover:cursor-pointer hover:border-amber-300/80 hover:bg-white/5 hover:text-amber-100 focus-visible:border-amber-300 focus-visible:outline-none"
+                            title="点击编辑成本价"
+                            @click="editCostPrice"
+                          >
+                            {{ displayCostPrice.toFixed(pricePrecision) }}
+                          </button>
+                          <button
+                            v-else
+                            type="button"
+                            class="mt-1 grid h-7 w-7 place-items-center rounded-lg border border-white/10 text-amber-200/80 transition hover:cursor-pointer hover:border-amber-300/80 hover:bg-white/5 hover:text-amber-100 focus-visible:border-amber-300 focus-visible:outline-none"
+                            aria-label="设置成本价"
+                            title="设置成本价"
+                            @click="editCostPrice"
+                          >
+                            <IconPencil :size="14" />
+                          </button>
+                        </div>
                       </div>
                       <p class="mt-2 text-[10px] text-emerald-100/45">
                         {{ quote.securityType === 'ETF' ? 'ETF 涨跌幅限制取决于跟踪标的，当前暂不估算' : '按昨收与当前板块涨跌幅规则计算' }}
+                        · 成本价仅作视觉参考
                       </p>
                     </div>
 
