@@ -17,6 +17,8 @@ let paused = false
 let windowActive = false
 let suppressNextAlerts = false
 let trendRefreshInFlight = false
+let trendRefreshPending = false
+let trendRefreshPendingForce = false
 let trendRequestVersion = 0
 let provider: QuoteProvider = 'EASTMONEY'
 let pollingIntervalMs = 5000
@@ -81,6 +83,9 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
 
   if (message.type === 'STOP') {
     running = false
+    trendRequestVersion += 1
+    trendRefreshPending = false
+    trendRefreshPendingForce = false
     clearQuoteTimer()
     clearTrendTimer()
     post({ type: 'STATUS', status: 'IDLE' })
@@ -106,13 +111,8 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
   }
 
   if (message.type === 'REFRESH_SECURITIES') {
-    // 分组切换属于主动刷新：同步更新趋势订阅，并允许闭市时拉取一次当日分时数据。
-    trendSecurities = message.securities
-    trendRequestVersion += 1
-    const trendRefresh = refreshTrends(true)
+    // 分组切换的行情快照与趋势订阅分离；趋势统一由 UPDATE_TREND_SECURITIES 驱动，避免双请求竞态。
     await refreshQuotes(message.securities)
-    await trendRefresh
-    scheduleTrends()
     return
   }
 
@@ -158,7 +158,13 @@ async function refreshQuotes(nextSecurities = securities) {
 
 async function refreshTrends(force = false) {
   const canAutomaticallyRefresh = !paused && windowActive && isContinuousAuction()
-  if (!running || !trendSecurities.length || trendRefreshInFlight || (!force && !canAutomaticallyRefresh)) return
+  if (!running || !trendSecurities.length || (!force && !canAutomaticallyRefresh)) return
+  if (trendRefreshInFlight) {
+    // 不丢弃请求期间到达的新分组/Provider 任务；当前请求结束后只补发一次最新快照。
+    trendRefreshPending = true
+    trendRefreshPendingForce ||= force
+    return
+  }
 
   trendRefreshInFlight = true
   const requestVersion = trendRequestVersion
@@ -170,6 +176,12 @@ async function refreshTrends(force = false) {
     post({ type: 'TREND_SNAPSHOT', trends, securityIds: requestedSecurities.map(item => item.securityId) })
   } finally {
     trendRefreshInFlight = false
+    if (trendRefreshPending) {
+      const pendingForce = trendRefreshPendingForce
+      trendRefreshPending = false
+      trendRefreshPendingForce = false
+      void refreshTrends(pendingForce)
+    }
   }
 }
 

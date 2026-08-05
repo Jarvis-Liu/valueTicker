@@ -209,7 +209,7 @@ watch(groups, (nextGroups) => {
 function selectGroup(groupId: string) {
   if (selectedGroupId.value === groupId) return
   selectedGroupId.value = groupId
-  // 切换视图是用户主动操作；闭市时允许拉取一次最新快照，但不会恢复自动轮询。
+  // 切换视图时仅主动拉取当前分组行情；趋势由 trendSecurities watcher 统一刷新，避免重复请求竞态。
   if (monitorStarted) quoteMonitor.refreshSecurities(getGroupSecurities(userConfigStore.stockGroups, groupId))
 }
 
