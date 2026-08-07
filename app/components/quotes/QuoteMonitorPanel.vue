@@ -13,6 +13,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { SecurityQuote } from '~/types/market'
 import type { SecurityIntradayTrend } from '~/services/quotes/types'
+import ChipCostRangeCell from '~/components/chips/ChipCostRangeCell.vue'
 import IntradayTrendSparkline from './IntradayTrendSparkline.vue'
 
 const props = defineProps<{
@@ -196,7 +197,7 @@ function pad(value: number) {
     </div>
 
     <div class="max-h-[550px] overflow-auto">
-      <table class="w-full min-w-[1060px] border-separate border-spacing-0 text-left">
+      <table class="w-full min-w-[1200px] border-separate border-spacing-0 text-left">
         <thead class="sticky top-0 z-20 bg-white">
           <tr class="text-[11px] font-medium text-slate-400">
             <th class="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3 font-medium">
@@ -243,6 +244,9 @@ function pad(value: number) {
             </th>
             <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
               昨收
+            </th>
+            <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
+              70%成本区间
             </th>
             <th class="border-b border-slate-100 px-3 py-3 font-medium">
               状态
@@ -333,6 +337,9 @@ function pad(value: number) {
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
               {{ formatted(quote.previousClose) }}
+            </td>
+            <td class="border-b border-slate-100 px-3 py-3.5 text-right">
+              <ChipCostRangeCell :target="quote" />
             </td>
             <td class="border-b border-slate-100 px-3 py-3.5">
               <div
@@ -431,7 +438,7 @@ function pad(value: number) {
           </tr>
           <tr v-if="displayedQuotes.length === 0">
             <td
-              colspan="10"
+              colspan="11"
               class="px-5 py-16 text-center text-sm text-slate-400"
             >
               {{ emptyMessage }}

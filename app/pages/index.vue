@@ -30,6 +30,7 @@ const userConfigStore = useUserConfigStore()
 const marketStore = useMarketStore()
 const quoteMonitor = useQuoteMonitor()
 const browserNotifications = useBrowserNotifications()
+const chipDistribution = useChipDistribution()
 const supabase = useSupabaseClient()
 const supabaseUser = useSupabaseUser()
 let monitorStarted = false
@@ -291,6 +292,8 @@ function refresh() {
   refreshing.value = true
   contentLoading.value = true
   quoteMonitor.forceRefresh()
+  // 筹码数据是日线级低频数据；手动刷新时只更新当前表格里已经加载过的证券。
+  void chipDistribution.refreshLoaded(visibleQuotes.value)
   // 成交额按产品约定仅在页面进入与用户手动刷新时请求。
   void refreshMarketTurnover()
   window.setTimeout(() => {
