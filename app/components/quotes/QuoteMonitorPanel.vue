@@ -13,6 +13,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { SecurityQuote } from '~/types/market'
 import type { SecurityIntradayTrend } from '~/services/quotes/types'
+import type { FundFlowRankEntry } from '~~/shared/types/fund-flow'
 import ChipCostRangeCell from '~/components/chips/ChipCostRangeCell.vue'
 import IntradayTrendSparkline from './IntradayTrendSparkline.vue'
 
@@ -20,6 +21,8 @@ const props = defineProps<{
   title: string
   quotes: SecurityQuote[]
   trends: Record<string, SecurityIntradayTrend>
+  fundFlowRanks: Record<string, FundFlowRankEntry>
+  fundFlowRankTotal: number
   canRemove: boolean
   pollingIntervalMs: number
 }>()
@@ -99,6 +102,18 @@ function signed(value: number, suffix = '') {
 
 function formatted(value: number, precision = 2) {
   return Number.isFinite(value) ? value.toFixed(precision) : '--'
+}
+
+function compactRank(rank: number) {
+  if (rank < 1000) return `#${rank}`
+  return `#${(rank / 1000).toFixed(rank < 10_000 ? 1 : 0)}k`
+}
+
+function rankTitle(code: string) {
+  const entry = props.fundFlowRanks[code]
+  if (!entry) return undefined
+  const total = props.fundFlowRankTotal > 0 ? ` / 共 ${props.fundFlowRankTotal.toLocaleString('zh-CN')} 只` : ''
+  return `主力净流入全市场第 ${entry.rank.toLocaleString('zh-CN')} 名${total}`
 }
 
 function formatQuoteTime(value: string) {
@@ -273,12 +288,20 @@ function pad(value: number) {
           >
             <td class="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-[#f9fbfa]">
               <div class="flex items-center gap-3">
-                <div
-                  class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-[11px] font-bold text-slate-500"
-                  :class="sortable && 'quote-drag-handle cursor-grab active:cursor-grabbing'"
-                  :title="sortable ? '拖动头像调整证券顺序' : undefined"
-                >
-                  {{ quote.securityType === 'ETF' ? 'ETF' : quote.name.slice(0, 1) }}
+                <div class="relative shrink-0">
+                  <div
+                    class="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-[11px] font-bold text-slate-500"
+                    :class="sortable && 'quote-drag-handle cursor-grab active:cursor-grabbing'"
+                    :title="sortable ? '拖动头像调整证券顺序' : undefined"
+                  >
+                    {{ quote.securityType === 'ETF' ? 'ETF' : quote.name.slice(0, 1) }}
+                  </div>
+                  <span
+                    v-if="quote.securityType === 'STOCK' && fundFlowRanks[quote.code]"
+                    class="absolute -right-2 -top-2 inline-flex min-w-6 items-center justify-center rounded-full border-2 border-white bg-indigo-600 px-1 py-0.5 text-[8px] font-bold leading-none text-white shadow-sm tabular-number"
+                    :title="rankTitle(quote.code)"
+                    :aria-label="rankTitle(quote.code)"
+                  >{{ compactRank(fundFlowRanks[quote.code]!.rank) }}</span>
                 </div>
                 <div>
                   <div class="flex items-center gap-1.5">

@@ -31,6 +31,7 @@ const marketStore = useMarketStore()
 const quoteMonitor = useQuoteMonitor()
 const browserNotifications = useBrowserNotifications()
 const chipDistribution = useChipDistribution()
+const fundFlowRanks = useFundFlowRanks()
 const supabase = useSupabaseClient()
 const supabaseUser = useSupabaseUser()
 let monitorStarted = false
@@ -152,6 +153,8 @@ onMounted(async () => {
           quoteMonitor.updateWindowActivity(isWindowActive())
           quoteMonitor.updateTrendSecurities(trendSecurities.value)
         }
+        fundFlowRanks.start(rankStockCodes.value)
+        fundFlowRanks.setWindowActive(isWindowActive())
         return
       } catch {
         if (attempt < 2) {
@@ -170,11 +173,16 @@ onMounted(async () => {
 
 const subscriptionSecurities = computed<SecurityItem[]>(() => getPollingSecurities(userConfigStore.stockGroups, MARKET_INDEX_SECURITIES))
 const trendSecurities = computed<SecurityItem[]>(() => getGroupSecurities(userConfigStore.stockGroups, selectedGroupId.value, MARKET_INDEX_SECURITIES))
+const rankStockCodes = computed(() => subscriptionSecurities.value
+  .filter(security => security.securityType === 'STOCK' && ['SSE:', 'SZSE:', 'BSE:'].some(prefix => security.securityId.startsWith(prefix)))
+  .map(security => security.code))
 
 watch(subscriptionSecurities, (nextSecurities) => {
   if (!monitorStarted) return
   quoteMonitor.updateSecurities(nextSecurities, quoteProvider.value)
 }, { deep: true })
+
+watch(rankStockCodes, nextCodes => fundFlowRanks.updateCodes(nextCodes), { deep: true })
 
 watch(trendSecurities, (nextSecurities) => {
   if (!monitorStarted) return
@@ -197,6 +205,7 @@ onUnmounted(() => {
   window.removeEventListener('blur', syncWindowActivity)
   document.removeEventListener('visibilitychange', syncWindowActivity)
   quoteMonitor.stop()
+  fundFlowRanks.stop()
 })
 
 watch(groups, (nextGroups) => {
@@ -239,8 +248,9 @@ function isWindowActive() {
 }
 
 function syncWindowActivity() {
-  if (!monitorStarted) return
-  quoteMonitor.updateWindowActivity(isWindowActive())
+  const active = isWindowActive()
+  fundFlowRanks.setWindowActive(active)
+  if (monitorStarted) quoteMonitor.updateWindowActivity(active)
 }
 
 function changeQuoteProvider(provider: QuoteProvider) {
@@ -270,7 +280,7 @@ function openAlert(quote: SecurityQuote) {
   alertOpen.value = true
 }
 
-/** 分时详情复用 Worker 已清洗的趋势快照，不产生新的行情请求。 */
+/** 分时详情复用 Worker 趋势快照，并按需补充腾讯主力资金数据。 */
 function openIntradayTrend(target: IntradayTrendTarget) {
   activeTrendTarget.value = target
   intradayTrendDialogOpen.value = true
@@ -296,6 +306,7 @@ function refresh() {
   void chipDistribution.refreshLoaded(visibleQuotes.value)
   // 成交额按产品约定仅在页面进入与用户手动刷新时请求。
   void refreshMarketTurnover()
+  void fundFlowRanks.refresh()
   window.setTimeout(() => {
     refreshing.value = false
     contentLoading.value = false
@@ -326,6 +337,7 @@ async function refreshMarketTurnover() {
 }
 function toggleMonitor() {
   paused.value = !paused.value
+  fundFlowRanks.setPaused(paused.value)
   if (paused.value) quoteMonitor.pause()
   else quoteMonitor.resume()
 }
@@ -347,6 +359,7 @@ async function signOut() {
     if (error) throw error
 
     quoteMonitor.stop()
+    fundFlowRanks.stop()
     monitorStarted = false
     userConfigStore.reset()
     marketStore.reset()
@@ -723,6 +736,8 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
               :title="selectedGroup.name"
               :quotes="visibleQuotes"
               :trends="marketStore.intradayTrends"
+              :fund-flow-ranks="fundFlowRanks.rankByCode.value"
+              :fund-flow-rank-total="fundFlowRanks.total.value"
               :can-remove="selectedGroupId !== 'all'"
               :polling-interval-ms="pollingIntervalMs"
               @alert="openAlert"

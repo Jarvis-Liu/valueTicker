@@ -43,7 +43,7 @@ function renderChart() {
   const bearishMarkers = signalMarkers.filter(marker => marker.direction === 'BEARISH')
   const option: EChartsCoreOption = {
     animationDuration: 350,
-    color: ['#1f2937', '#722ed1', '#f5222d', '#8c8c8c'],
+    color: ['#3b82f6', '#722ed1', '#f5222d', '#8c8c8c'],
     tooltip: {
       trigger: 'axis',
       triggerOn: 'mousemove|click',

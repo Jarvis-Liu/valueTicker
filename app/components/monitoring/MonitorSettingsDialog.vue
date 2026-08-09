@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 import { IconClock, IconDatabase, IconSettings, IconX } from '@tabler/icons-vue'
+import ProviderRoutingHint from '~/components/common/ProviderRoutingHint.vue'
 import type { QuoteProvider } from '~/services/quotes/types'
 
 const props = defineProps<{
@@ -107,6 +108,7 @@ function save() {
                     <h3 class="text-xs font-semibold text-slate-800">
                       行情数据源
                     </h3>
+                    <ProviderRoutingHint />
                   </div>
                   <p class="mt-1 text-[11px] leading-4 text-slate-400">
                     切换后会立即使用新数据源拉取一批行情，首批数据仅用于校准提醒。

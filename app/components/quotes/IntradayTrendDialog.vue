@@ -2,6 +2,7 @@
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 import { IconChartLine, IconDatabase, IconX } from '@tabler/icons-vue'
 import ChipDistributionPanel from '~/components/chips/ChipDistributionPanel.vue'
+import MainFundFlowPanel from '~/components/quotes/MainFundFlowPanel.vue'
 import type { SecurityIntradayTrend } from '~/services/quotes/types'
 import type { IntradayTrendTarget } from '~/types/market'
 import InteractiveIntradayChart from './InteractiveIntradayChart.vue'
@@ -16,6 +17,10 @@ const activeTab = ref<'intraday' | 'chips'>('intraday')
 const chips = useChipDistribution()
 
 const chipSupported = computed(() => Boolean(props.target && chips.isSupported(props.target)))
+const fundFlowSupported = computed(() => Boolean(
+  props.target?.securityType === 'STOCK'
+  && ['SSE:', 'SZSE:', 'BSE:'].some(prefix => props.target!.securityId.startsWith(prefix))
+))
 const pricePrecision = computed<2 | 3>(() => props.target?.securityType === 'ETF' ? 3 : 2)
 const latestPrice = computed(() => {
   for (let index = (props.trend?.points.length ?? 0) - 1; index >= 0; index -= 1) {
@@ -41,6 +46,11 @@ const hasData = computed(() => props.trend?.status === 'READY' && latestPrice.va
 
 watch(() => [props.open, props.target?.securityId] as const, () => {
   activeTab.value = 'intraday'
+})
+
+const tabSubtitle = computed(() => {
+  if (activeTab.value === 'chips') return '近20日筹码趋势'
+  return fundFlowSupported.value ? '当日分时与主力动向' : '当日分时'
 })
 
 function selectTab(tab: 'intraday' | 'chips') {
@@ -94,7 +104,7 @@ function formatUpdatedAt(value: string | undefined) {
                     {{ target?.name ?? '证券详情' }}
                   </DialogTitle>
                   <p class="mt-0.5 text-xs text-slate-400 tabular-number">
-                    {{ target?.code ?? '--' }} · {{ activeTab === 'intraday' ? '当日分时' : '近60日筹码趋势' }}
+                    {{ target?.code ?? '--' }} · {{ tabSubtitle }}
                   </p>
                 </div>
               </div>
@@ -170,8 +180,14 @@ function formatUpdatedAt(value: string | undefined) {
                 </div>
               </div>
               <div class="relative flex-1 px-2 py-2 sm:px-4 sm:py-4">
+                <MainFundFlowPanel
+                  v-if="hasData && target && fundFlowSupported"
+                  :target="target"
+                  :trend="trend"
+                  :price-precision="pricePrecision"
+                />
                 <InteractiveIntradayChart
-                  v-if="hasData"
+                  v-else-if="hasData"
                   :trend="trend"
                   :price-precision="pricePrecision"
                 />
@@ -190,12 +206,12 @@ function formatUpdatedAt(value: string | undefined) {
                 </div>
               </div>
               <div class="border-t border-slate-100 px-4 py-3 text-[11px] text-slate-400 sm:px-6">
-                价格线以昨收为中心对称缩放，并标注当日最高/最低；可拖拽平移、滚轮或双指缩放，并悬停查看分钟数据。
+                价格与资金流采用同一证券路由：沪深优先腾讯，北交所使用东方财富；两者共享时间轴、缩放和十字光标。
               </div>
             </template>
 
             <ChipDistributionPanel
-              v-else-if="target && chipSupported"
+              v-else-if="activeTab === 'chips' && target && chipSupported"
               :target="target"
             />
           </DialogPanel>

@@ -16,18 +16,23 @@ import {
 } from 'lightweight-charts'
 import type { IntradayTrendPoint, SecurityIntradayTrend } from '~/services/quotes/types'
 import { normalizeIntradayTrendPoints } from '~/utils/intraday-trend-normalizer'
+import type { FundFlowSnapshot } from '~~/shared/types/fund-flow'
 
 const props = defineProps<{
   trend: SecurityIntradayTrend | undefined
   pricePrecision: 2 | 3
+  fundFlow?: FundFlowSnapshot | null
+  showFundFlow?: boolean
 }>()
 
 const chartElement = ref<HTMLElement | null>(null)
 // 时间轴两侧各保留 15% 可视留白，避开左上角悬浮信息层并保持左右平衡。
 const TIMELINE_SIDE_INSET_RATIO = 0.15
 const hoverPoint = ref<IntradayTrendPoint | null>(null)
+const hoverTime = ref<UTCTimestamp | null>(null)
 let chart: IChartApi | null = null
 let series: ISeriesApi<'Baseline'> | null = null
+let fundSeries: ISeriesApi<'Baseline'> | null = null
 let previousCloseLine: IPriceLine | null = null
 let dailyHighLine: IPriceLine | null = null
 let dailyLowLine: IPriceLine | null = null
@@ -41,6 +46,9 @@ const chartPoints = computed(() => completeChartTimeline(props.trend?.points ?? 
 const latestPoint = computed(() => findLastPricePoint(chartPoints.value))
 const displayPoint = computed(() => hoverPoint.value ?? latestPoint.value)
 const pointMap = computed(() => new Map(chartPoints.value.map(point => [toTimestamp(point.time), point])))
+const fundPointMap = computed(() => new Map((props.fundFlow?.points ?? []).map(point => [toTimestamp(point.time), point])))
+const latestFundPoint = computed(() => props.fundFlow?.points.at(-1) ?? null)
+const displayFundPoint = computed(() => hoverTime.value ? fundPointMap.value.get(hoverTime.value) ?? null : latestFundPoint.value)
 const change = computed(() => {
   const price = displayPoint.value?.price
   const previousClose = props.trend?.previousClose
@@ -48,7 +56,7 @@ const change = computed(() => {
   const value = price! - previousClose!
   return { value, percent: value / previousClose! * 100 }
 })
-watch(() => [props.trend, props.pricePrecision] as const, updateChart, { deep: true })
+watch(() => [props.trend, props.pricePrecision, props.fundFlow] as const, updateChart, { deep: true })
 
 onMounted(createInteractiveChart)
 onUnmounted(destroyChart)
@@ -58,7 +66,7 @@ function createInteractiveChart() {
 
   chart = createChart(chartElement.value, {
     autoSize: true,
-    height: 460,
+    height: props.showFundFlow ? 560 : 460,
     layout: {
       background: { type: ColorType.Solid, color: 'transparent' },
       textColor: '#64748b',
@@ -87,8 +95,23 @@ function createInteractiveChart() {
   })
   // 官方 BaselineSeries 以昨收为基准自动切换上下颜色；填充保持透明，仅展示分时折线。
   series = chart.addSeries(BaselineSeries, createBaselineOptions(getPreviousClose(props.trend)))
+  if (props.showFundFlow) {
+    fundSeries = chart.addSeries(BaselineSeries, createFundFlowOptions(), 1)
+    fundSeries.createPriceLine({
+      price: 0,
+      color: '#94a3b8',
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: '零轴'
+    })
+    chart.panes()[0]?.setStretchFactor(3)
+    chart.panes()[1]?.setStretchFactor(1.35)
+    chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.16, bottom: 0.16 } })
+  }
   chart.subscribeCrosshairMove((param) => {
-    hoverPoint.value = param.time ? pointMap.value.get(Number(param.time) as UTCTimestamp) ?? null : null
+    hoverTime.value = param.time ? Number(param.time) as UTCTimestamp : null
+    hoverPoint.value = hoverTime.value ? pointMap.value.get(hoverTime.value) ?? null : null
   })
   resizeObserver = new ResizeObserver(fitIntradayTimeline)
   resizeObserver.observe(chartElement.value)
@@ -104,6 +127,11 @@ function updateChart() {
   })
   series.setData(data)
   series.applyOptions(createBaselineOptions(getPreviousClose(trend)))
+  fundSeries?.setData((props.fundFlow?.points ?? []).map(point => ({
+    time: toTimestamp(point.time),
+    // 资金 Pane 直接使用“亿元”为数值单位，确保所有 Y 轴刻度统一格式化。
+    value: point.mainNetInflow / 1e8
+  })))
   if (previousCloseLine) series.removePriceLine(previousCloseLine)
   if (dailyHighLine) series.removePriceLine(dailyHighLine)
   if (dailyLowLine) series.removePriceLine(dailyLowLine)
@@ -163,6 +191,29 @@ function createBaselineOptions(previousClose: number): BaselineSeriesPartialOpti
   }
 }
 
+function createFundFlowOptions(): BaselineSeriesPartialOptions {
+  return {
+    baseValue: { type: 'price', price: 0 },
+    title: '主力净流入',
+    topLineColor: '#f43f5e',
+    bottomLineColor: '#10b981',
+    topFillColor1: 'rgba(244, 63, 94, 0.16)',
+    topFillColor2: 'rgba(244, 63, 94, 0.03)',
+    bottomFillColor1: 'rgba(16, 185, 129, 0.03)',
+    bottomFillColor2: 'rgba(16, 185, 129, 0.16)',
+    lineWidth: 2,
+    crosshairMarkerVisible: true,
+    crosshairMarkerRadius: 4,
+    lastValueVisible: true,
+    priceLineVisible: false,
+    priceFormat: {
+      type: 'custom',
+      minMove: 0.01,
+      formatter: formatFundAxis
+    }
+  }
+}
+
 function getPreviousClose(trend: SecurityIntradayTrend | undefined) {
   return Number.isFinite(trend?.previousClose) ? trend!.previousClose : 0
 }
@@ -172,6 +223,7 @@ function destroyChart() {
   chart?.remove()
   chart = null
   series = null
+  fundSeries = null
   previousCloseLine = null
   dailyHighLine = null
   dailyLowLine = null
@@ -205,10 +257,22 @@ function formatMinuteFromTimestamp(value: Time) {
 function isFiniteNumber(value: number | null | undefined): value is number {
   return Number.isFinite(value)
 }
+
+function formatFundAxis(value: number) {
+  return `${value.toFixed(2)}亿`
+}
+
+function formatFundTooltip(value: number) {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${(value / 1e8).toFixed(2)}亿元`
+}
 </script>
 
 <template>
-  <div class="relative min-h-[360px] sm:min-h-[460px]">
+  <div
+    class="relative"
+    :class="showFundFlow ? 'min-h-[500px] sm:min-h-[560px]' : 'min-h-[360px] sm:min-h-[460px]'"
+  >
     <div
       ref="chartElement"
       class="absolute inset-0"
@@ -228,6 +292,25 @@ function isFiniteNumber(value: number | null | undefined): value is number {
         :class="change?.value && change.value < 0 ? 'text-emerald-600' : 'text-rose-600'"
       >
         {{ change ? `${change.value >= 0 ? '+' : ''}${change.value.toFixed(pricePrecision)} · ${change.percent >= 0 ? '+' : ''}${change.percent.toFixed(2)}%` : '--' }}
+      </p>
+    </div>
+    <div
+      v-if="showFundFlow"
+      class="pointer-events-none absolute left-3 top-[70%] z-10 min-w-40 rounded-lg border border-slate-100 bg-white/92 px-2.5 py-2 text-[10px] shadow-sm backdrop-blur"
+    >
+      <div class="flex items-center justify-between gap-3 text-slate-400">
+        <span>主力累计净流入</span>
+        <span class="tabular-number">{{ displayFundPoint?.time ?? '--' }}</span>
+      </div>
+      <p
+        class="mt-0.5 text-sm font-semibold tabular-number"
+        :class="(displayFundPoint?.mainNetInflow ?? 0) < 0 ? 'text-emerald-600' : 'text-rose-600'"
+      >
+        {{ displayFundPoint ? formatFundTooltip(displayFundPoint.mainNetInflow) : '--' }}
+      </p>
+      <p class="mt-0.5 whitespace-nowrap text-[9px] text-slate-400 tabular-number">
+        超大单 {{ displayFundPoint ? formatFundTooltip(displayFundPoint.superNetInflow) : '--' }}
+        · 大单 {{ displayFundPoint ? formatFundTooltip(displayFundPoint.bigNetInflow) : '--' }}
       </p>
     </div>
   </div>

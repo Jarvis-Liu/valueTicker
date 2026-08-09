@@ -10,6 +10,7 @@ import {
   IconSettings
 } from '@tabler/icons-vue'
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
+import ProviderRoutingHint from '~/components/common/ProviderRoutingHint.vue'
 import type { MonitorStatus, QuoteProvider } from '~/services/quotes/types'
 
 const props = defineProps<{
@@ -90,9 +91,10 @@ function changeProvider(provider: QuoteProvider) {
         </div>
         <div class="h-7 w-px bg-white/10" />
         <div>
-          <p class="text-[11px] text-slate-400">
-            当前数据源
-          </p>
+          <div class="flex items-center gap-1 text-[11px] text-slate-400">
+            <span>当前数据源</span>
+            <ProviderRoutingHint variant="dark" />
+          </div>
           <Listbox
             :model-value="provider"
             @update:model-value="changeProvider"
