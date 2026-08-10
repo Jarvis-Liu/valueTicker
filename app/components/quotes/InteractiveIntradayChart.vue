@@ -296,22 +296,30 @@ function formatFundTooltip(value: number) {
     </div>
     <div
       v-if="showFundFlow"
-      class="pointer-events-none absolute left-3 top-[70%] z-10 min-w-40 rounded-lg border border-slate-100 bg-white/92 px-2.5 py-2 text-[10px] shadow-sm backdrop-blur"
+      class="pointer-events-none absolute left-3 top-[70%] z-10 w-28 rounded-lg border border-slate-100 bg-white/92 px-2.5 py-2 text-[10px] shadow-sm backdrop-blur"
     >
-      <div class="flex items-center justify-between gap-3 text-slate-400">
-        <span>主力累计净流入</span>
-        <span class="tabular-number">{{ displayFundPoint?.time ?? '--' }}</span>
-      </div>
+      <p class="text-slate-400 tabular-number">
+        {{ displayFundPoint?.time ?? '--' }}
+      </p>
+      <p class="mt-1 font-medium text-slate-500">
+        主力累计净流入
+      </p>
       <p
         class="mt-0.5 text-sm font-semibold tabular-number"
         :class="(displayFundPoint?.mainNetInflow ?? 0) < 0 ? 'text-emerald-600' : 'text-rose-600'"
       >
         {{ displayFundPoint ? formatFundTooltip(displayFundPoint.mainNetInflow) : '--' }}
       </p>
-      <p class="mt-0.5 whitespace-nowrap text-[9px] text-slate-400 tabular-number">
-        超大单 {{ displayFundPoint ? formatFundTooltip(displayFundPoint.superNetInflow) : '--' }}
-        · 大单 {{ displayFundPoint ? formatFundTooltip(displayFundPoint.bigNetInflow) : '--' }}
-      </p>
+      <div class="mt-1.5 space-y-1.5 border-t border-slate-100 pt-1.5 text-[9px] text-slate-400">
+        <p>
+          <span class="block">超大单</span>
+          <span class="mt-0.5 block whitespace-nowrap font-medium text-slate-600 tabular-number">{{ displayFundPoint ? formatFundTooltip(displayFundPoint.superNetInflow) : '--' }}</span>
+        </p>
+        <p>
+          <span class="block">大单</span>
+          <span class="mt-0.5 block whitespace-nowrap font-medium text-slate-600 tabular-number">{{ displayFundPoint ? formatFundTooltip(displayFundPoint.bigNetInflow) : '--' }}</span>
+        </p>
+      </div>
     </div>
   </div>
 </template>
