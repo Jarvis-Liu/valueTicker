@@ -1,12 +1,12 @@
 import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
 import { replaceStockGroups } from '~~/server/services/user-stock-storage'
-import { apiFailure, apiSuccess, ApiResponseError, parseIfMatch } from '~~/server/utils/api-response'
+import { apiFailure, apiSuccess, ApiResponseError, parseConfigVersion } from '~~/server/utils/api-response'
 import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
   try {
     const userId = await requireUserId(event)
-    const expectedVersion = parseIfMatch(event)
+    const expectedVersion = parseConfigVersion(event)
     const payload = stockGroupsExportFileSchema.parse(await readBody(event))
     const result = await replaceStockGroups(userId, payload, expectedVersion)
     return apiSuccess(result, result.config.configVersion)

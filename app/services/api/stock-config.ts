@@ -52,7 +52,7 @@ export async function fetchStockConfig() {
 export async function replaceStockGroupsRequest(payload: StockGroupsExportFile, configVersion: number) {
   return requestApi<ReplaceStockGroupsResult>('/api/stock-groups/import', {
     method: 'PUT',
-    headers: { 'If-Match': String(configVersion) },
+    headers: { 'X-Config-Version': String(configVersion) },
     body: payload
   })
 }
@@ -61,7 +61,7 @@ export async function replaceStockGroupsRequest(payload: StockGroupsExportFile, 
 export async function reorderStockGroupsRequest(groupIds: string[], configVersion: number) {
   return requestApi<ReorderStockGroupsResult>('/api/stock-groups/reorder', {
     method: 'PUT',
-    headers: { 'If-Match': String(configVersion) },
+    headers: { 'X-Config-Version': String(configVersion) },
     body: { groupIds }
   })
 }
@@ -71,7 +71,7 @@ export async function createStockGroupRequest(name: string, configVersion: numbe
   return requestApi<CreateStockGroupResult>('/api/stock-groups', {
     method: 'POST',
     headers: {
-      'If-Match': String(configVersion)
+      'X-Config-Version': String(configVersion)
     },
     body: {
       name
@@ -84,7 +84,7 @@ export async function renameStockGroupRequest(groupId: string, name: string, con
   return requestApi<CreateStockGroupResult>(`/api/stock-groups/${encodeURIComponent(groupId)}`, {
     method: 'PATCH',
     headers: {
-      'If-Match': String(configVersion)
+      'X-Config-Version': String(configVersion)
     },
     body: {
       name
@@ -97,7 +97,7 @@ export async function deleteStockGroupRequest(groupId: string, configVersion: nu
   return requestApi<CreateStockGroupResult>(`/api/stock-groups/${encodeURIComponent(groupId)}`, {
     method: 'DELETE',
     headers: {
-      'If-Match': String(configVersion)
+      'X-Config-Version': String(configVersion)
     }
   })
 }
@@ -111,7 +111,7 @@ export async function searchSecuritiesRequest(keyword: string) {
 export async function reorderStockGroupMembersRequest(groupId: string, securityIds: string[], configVersion: number) {
   return requestApi<ReorderStockGroupMembersResult>(`/api/stock-groups/${encodeURIComponent(groupId)}/members/reorder`, {
     method: 'PUT',
-    headers: { 'If-Match': String(configVersion) },
+    headers: { 'X-Config-Version': String(configVersion) },
     body: { securityIds }
   })
 }
@@ -119,7 +119,7 @@ export async function reorderStockGroupMembersRequest(groupId: string, securityI
 export async function addStockMemberRequest(groupId: string, security: SecurityItem, configVersion: number) {
   return requestApi<AddStockMemberResult>(`/api/stock-groups/${encodeURIComponent(groupId)}/members`, {
     method: 'POST',
-    headers: { 'If-Match': String(configVersion) },
+    headers: { 'X-Config-Version': String(configVersion) },
     body: security
   })
 }
@@ -128,7 +128,7 @@ export async function addStockMemberRequest(groupId: string, security: SecurityI
 export async function deleteStockMemberRequest(groupId: string, securityId: string, configVersion: number) {
   return requestApi<AddStockMemberResult>(`/api/stock-groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(securityId)}`, {
     method: 'DELETE',
-    headers: { 'If-Match': String(configVersion) }
+    headers: { 'X-Config-Version': String(configVersion) }
   })
 }
 
@@ -136,7 +136,7 @@ export async function deleteStockMemberRequest(groupId: string, securityId: stri
 export async function transferStockMemberRequest(groupId: string, securityId: string, targetGroupId: string, mode: 'MOVE' | 'COPY', configVersion: number) {
   return requestApi<AddStockMemberResult>(`/api/stock-groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(securityId)}`, {
     method: 'POST',
-    headers: { 'If-Match': String(configVersion) },
+    headers: { 'X-Config-Version': String(configVersion) },
     body: { targetGroupId, mode }
   })
 }
@@ -145,7 +145,7 @@ export async function transferStockMemberRequest(groupId: string, securityId: st
 export async function updateStockAlertsRequest(securityId: string, rules: AlertRule[], costPrice: number | null, configVersion: number) {
   return requestApi<UpdateStockAlertsResult>(`/api/stock-alerts/${encodeURIComponent(securityId)}`, {
     method: 'PUT',
-    headers: { 'If-Match': String(configVersion) },
+    headers: { 'X-Config-Version': String(configVersion) },
     body: { rules, costPrice }
   })
 }

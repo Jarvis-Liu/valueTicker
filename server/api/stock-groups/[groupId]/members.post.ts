@@ -1,13 +1,13 @@
 import { addStockMemberPayloadSchema } from '~~/shared/schemas/stock-config'
 import { addStockGroupMember } from '~~/server/services/user-stock-storage'
-import { apiFailure, apiSuccess, ApiResponseError, parseIfMatch } from '~~/server/utils/api-response'
+import { apiFailure, apiSuccess, ApiResponseError, parseConfigVersion } from '~~/server/utils/api-response'
 import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
   try {
     const userId = await requireUserId(event)
     const groupId = String(event.context.params?.groupId ?? '')
-    const result = await addStockGroupMember(userId, groupId, addStockMemberPayloadSchema.parse(await readBody(event)), parseIfMatch(event))
+    const result = await addStockGroupMember(userId, groupId, addStockMemberPayloadSchema.parse(await readBody(event)), parseConfigVersion(event))
     return apiSuccess(result, result.config.configVersion)
   } catch (error) {
     if (error instanceof ApiResponseError) return apiFailure(event, error)

@@ -670,7 +670,7 @@ interface ApiResponse<T> {
 所有写请求携带：
 
 ```http
-If-Match: {configVersion}
+X-Config-Version: {configVersion}
 ```
 
 版本不一致返回 `409 CONFIG_VERSION_CONFLICT`，前端重新拉取配置并提示用户处理冲突。
@@ -690,7 +690,7 @@ GET /api/stock-config
 ```http
 POST /api/stock-groups
 Content-Type: application/json
-If-Match: 12
+X-Config-Version: 12
 
 {
   "name": "核心关注"

@@ -1,6 +1,6 @@
 import { transferStockMemberPayloadSchema } from '~~/shared/schemas/stock-config'
 import { transferStockGroupMember } from '~~/server/services/user-stock-storage'
-import { apiFailure, apiSuccess, ApiResponseError, parseIfMatch } from '~~/server/utils/api-response'
+import { apiFailure, apiSuccess, ApiResponseError, parseConfigVersion } from '~~/server/utils/api-response'
 import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
     const groupId = String(event.context.params?.groupId ?? '')
     const securityId = decodeURIComponent(String(event.context.params?.securityId ?? ''))
     const payload = transferStockMemberPayloadSchema.parse(await readBody(event))
-    const result = await transferStockGroupMember(userId, groupId, securityId, payload, parseIfMatch(event))
+    const result = await transferStockGroupMember(userId, groupId, securityId, payload, parseConfigVersion(event))
     return apiSuccess(result, result.config.configVersion)
   } catch (error) {
     if (error instanceof ApiResponseError) return apiFailure(event, error)

@@ -1,6 +1,6 @@
 import { updateStockGroupPayloadSchema } from '~~/shared/schemas/stock-config'
 import { renameStockGroup } from '~~/server/services/user-stock-storage'
-import { apiFailure, apiSuccess, ApiResponseError, parseIfMatch } from '~~/server/utils/api-response'
+import { apiFailure, apiSuccess, ApiResponseError, parseConfigVersion } from '~~/server/utils/api-response'
 import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const userId = await requireUserId(event)
-    const expectedVersion = parseIfMatch(event)
+    const expectedVersion = parseConfigVersion(event)
     const payload = updateStockGroupPayloadSchema.parse(await readBody(event))
     const result = await renameStockGroup(userId, groupId, payload, expectedVersion)
 

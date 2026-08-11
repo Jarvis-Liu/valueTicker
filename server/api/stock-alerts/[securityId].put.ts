@@ -1,6 +1,6 @@
 import { updateStockAlertsPayloadSchema } from '~~/shared/schemas/stock-config'
 import { updateStockAlerts } from '~~/server/services/user-stock-storage'
-import { apiFailure, apiSuccess, ApiResponseError, parseIfMatch } from '~~/server/utils/api-response'
+import { apiFailure, apiSuccess, ApiResponseError, parseConfigVersion } from '~~/server/utils/api-response'
 import { requireUserId } from '~~/server/utils/require-user'
 
 export default defineEventHandler(async (event) => {
@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
     const userId = await requireUserId(event)
     const securityId = decodeURIComponent(String(event.context.params?.securityId ?? ''))
     const payload = updateStockAlertsPayloadSchema.parse(await readBody(event))
-    const result = await updateStockAlerts(userId, securityId, payload, parseIfMatch(event))
+    const result = await updateStockAlerts(userId, securityId, payload, parseConfigVersion(event))
 
     return apiSuccess(result, result.config.configVersion)
   } catch (error) {
