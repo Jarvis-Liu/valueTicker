@@ -34,12 +34,18 @@ export function apiFailure<T = never>(event: H3Event, error: ApiResponseError): 
   }
 }
 
-export function parseIfMatch(event: H3Event): number {
-  const value = getHeader(event, 'if-match')
+/**
+ * 读取客户端携带的业务配置版本。
+ *
+ * 不使用标准 HTTP `If-Match`，避免 Vercel/CDN 将业务版本误当作 ETag
+ * 前置条件并在请求进入 Nitro 前直接返回 412。
+ */
+export function parseConfigVersion(event: H3Event): number {
+  const value = getHeader(event, 'x-config-version')
   const version = Number(String(value ?? '').replaceAll('"', ''))
 
   if (!Number.isInteger(version) || version <= 0) {
-    throw new ApiResponseError(422, 'INVALID_PAYLOAD', '缺少有效的 If-Match 配置版本')
+    throw new ApiResponseError(422, 'INVALID_PAYLOAD', '缺少有效的 X-Config-Version 配置版本')
   }
 
   return version
