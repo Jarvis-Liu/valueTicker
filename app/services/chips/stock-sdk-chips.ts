@@ -16,6 +16,23 @@ interface ChipSdkContext {
 
 let sdkPromise: Promise<ChipSdkContext> | null = null
 
+/** 将 stock-sdk 发出的东财历史 K 线请求转发到携带服务端 Cookie 的同源代理。 */
+const stockSdkFetch: typeof fetch = (input, init) => {
+  const requestUrl = getRequestUrl(input)
+  const sourceUrl = new URL(requestUrl)
+  if (sourceUrl.hostname.endsWith('.eastmoney.com') && sourceUrl.pathname === '/api/qt/stock/kline/get') {
+    const proxyParams = new URLSearchParams()
+    for (const name of ['secid', 'klt', 'fqt', 'beg', 'end']) {
+      const value = sourceUrl.searchParams.get(name)
+      if (value !== null) proxyParams.set(name, value)
+    }
+    return fetch(`/api/test/eastmoney-kline?${proxyParams}`, {
+      signal: init?.signal
+    })
+  }
+  return fetch(input, init)
+}
+
 export function isChipDistributionSupported(target: ChipDistributionTarget) {
   return target.securityType === 'STOCK' && /^(SSE|SZSE|BSE):\d{6}$/.test(target.securityId)
 }
@@ -90,11 +107,16 @@ export async function fetchChipDistribution(target: ChipDistributionTarget): Pro
 /** 延迟加载 SDK，避免用户未查看筹码数据时增加首页脚本解析成本。 */
 function getSdk() {
   sdkPromise ??= import('stock-sdk').then(({ StockSDK, calcChipDistribution, calcSignals }) => ({
-    sdk: new StockSDK({ timeout: 8_000 }),
+    sdk: new StockSDK({ timeout: 8_000, fetchImpl: stockSdkFetch }),
     calcChipDistribution,
     calcSignals
   }))
   return sdkPromise
+}
+
+function getRequestUrl(input: RequestInfo | URL) {
+  if (typeof input === 'string') return input
+  return input instanceof URL ? input.toString() : input.url
 }
 
 function getKlineStartDate() {

@@ -31,6 +31,7 @@ const emit = defineEmits<{
   settings: []
   notifications: []
   signOut: []
+  logoTest: []
   providerChange: [provider: QuoteProvider]
 }>()
 
@@ -54,7 +55,13 @@ function changeProvider(provider: QuoteProvider) {
 <template>
   <header class="border-b border-white/10 bg-[#0b2420] text-white">
     <div class="mx-auto flex h-[72px] max-w-[1680px] items-center gap-4 px-4 sm:px-6">
-      <div class="flex min-w-0 items-center gap-3 lg:w-[224px]">
+      <button
+        type="button"
+        class="flex min-w-0 items-center gap-3 text-left lg:w-[224px]"
+        title="测试东财日 K 请求"
+        aria-label="测试东财日 K 请求"
+        @click="emit('logoTest')"
+      >
         <div class="relative grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-400 text-[#08211d] shadow-lg shadow-emerald-950/20">
           <IconActivityHeartbeat
             :size="23"
@@ -70,7 +77,7 @@ function changeProvider(provider: QuoteProvider) {
             MARKET MONITOR
           </p>
         </div>
-      </div>
+      </button>
 
       <div class="hidden h-8 w-px bg-white/10 lg:block" />
 

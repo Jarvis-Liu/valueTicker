@@ -313,6 +313,24 @@ function refresh() {
   }, 700)
 }
 
+/** 临时测试入口：点击 Header Logo 后通过 Nuxt 服务端请求东财日 K，并打印完整响应。 */
+async function testEastmoneyKline() {
+  try {
+    const payload = await $fetch('/api/test/eastmoney-kline', {
+      query: {
+        secid: '0.301217',
+        klt: '101',
+        fqt: '1',
+        beg: '20250207',
+        end: '20500101'
+      }
+    })
+    console.log('[ValueTicker][东财日 K 测试]', payload)
+  } catch (error) {
+    console.error('[ValueTicker][东财日 K 测试] 请求失败', error)
+  }
+}
+
 /**
  * 直连腾讯计算当前三市总成交额；仅在午盘/收盘采集窗口内申请服务端保存快照。
  * 实时展示失败不影响主行情表格的手动刷新。
@@ -656,6 +674,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         @refresh="refresh"
         @settings="monitorSettingsOpen = true"
         @notifications="alertNotificationsOpen = true"
+        @logo-test="testEastmoneyKline"
         @sign-out="signOut"
       />
       <div class="border-b border-slate-200/70 bg-[#f3f6f4]/95 shadow-sm backdrop-blur">

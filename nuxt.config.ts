@@ -11,6 +11,9 @@ export default defineNuxtConfig({
   devtools: {
     enabled: true
   },
+  runtimeConfig: {
+    eastmoneyCookie: process.env.EASTMONEY_COOKIE ?? ''
+  },
 
   compatibilityDate: '2025-01-15',
 
