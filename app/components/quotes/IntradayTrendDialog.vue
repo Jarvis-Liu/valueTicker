@@ -206,7 +206,7 @@ function formatUpdatedAt(value: string | undefined) {
                 </div>
               </div>
               <div class="border-t border-slate-100 px-4 py-3 text-[11px] text-slate-400 sm:px-6">
-                价格与资金流采用同一证券路由：沪深优先腾讯，北交所使用东方财富；两者共享时间轴、缩放和十字光标。
+                分时价格使用当前选择的数据源模式；主力资金按证券能力独立路由，两者共享时间轴、缩放和十字光标。
               </div>
             </template>
 

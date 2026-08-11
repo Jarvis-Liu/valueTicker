@@ -2,25 +2,26 @@
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 import { IconClock, IconDatabase, IconSettings, IconX } from '@tabler/icons-vue'
 import ProviderRoutingHint from '~/components/common/ProviderRoutingHint.vue'
-import type { QuoteProvider } from '~/services/quotes/types'
+import type { QuoteProviderMode } from '~/services/quotes/types'
 
 const props = defineProps<{
   open: boolean
-  provider: QuoteProvider
+  provider: QuoteProviderMode
   pollingIntervalMs: number
 }>()
 
 const emit = defineEmits<{
   close: []
-  save: [settings: { provider: QuoteProvider, pollingIntervalMs: number }]
+  save: [settings: { provider: QuoteProviderMode, pollingIntervalMs: number }]
 }>()
 
-const providerOptions: Array<{ value: QuoteProvider, label: string, description: string }> = [
-  { value: 'EASTMONEY', label: '东财行情', description: '支持沪深、北交所及指数行情' },
-  { value: 'TENCENT', label: '腾讯行情', description: '覆盖常用 A 股与场内 ETF 行情' }
+const providerOptions: Array<{ value: QuoteProviderMode, label: string, description: string }> = [
+  { value: 'MIXED', label: '默认混合', description: '沪深、ETF 与 A 股指数走腾讯；北交所和韩国 KOSPI 走东财' },
+  { value: 'EASTMONEY', label: '仅东财', description: '实时行情与分时统一走东财，接口受限时可能暂不可用' },
+  { value: 'TENCENT', label: '仅腾讯', description: '实时行情与分时统一走腾讯，北交所和韩国 KOSPI 可能显示 --' }
 ]
 const intervalOptions = [5000, 10000, 15000, 30000]
-const draftProvider = ref<QuoteProvider>('EASTMONEY')
+const draftProvider = ref<QuoteProviderMode>('MIXED')
 const draftIntervalMs = ref(5000)
 
 watch(() => props.open, (open) => {

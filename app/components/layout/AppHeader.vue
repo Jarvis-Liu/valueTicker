@@ -11,13 +11,13 @@ import {
 } from '@tabler/icons-vue'
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import ProviderRoutingHint from '~/components/common/ProviderRoutingHint.vue'
-import type { MonitorStatus, QuoteProvider } from '~/services/quotes/types'
+import type { MonitorStatus, QuoteProviderMode } from '~/services/quotes/types'
 
 const props = defineProps<{
   paused: boolean
   refreshing: boolean
   status: MonitorStatus
-  provider: QuoteProvider
+  provider: QuoteProviderMode
   pollingIntervalMs: number
   lastUpdatedAt: string
   notificationCount: number
@@ -31,10 +31,11 @@ const emit = defineEmits<{
   settings: []
   notifications: []
   signOut: []
-  providerChange: [provider: QuoteProvider]
+  providerChange: [provider: QuoteProviderMode]
 }>()
 
-const providerOptions: Array<{ label: string, value: QuoteProvider }> = [
+const providerOptions: Array<{ label: string, value: QuoteProviderMode }> = [
+  { label: '默认混合', value: 'MIXED' },
   { label: '东财行情', value: 'EASTMONEY' },
   { label: '腾讯行情', value: 'TENCENT' }
 ]
@@ -46,7 +47,7 @@ const userInitials = computed(() => {
   return localPart ? localPart.slice(0, 2).toUpperCase() : 'VT'
 })
 
-function changeProvider(provider: QuoteProvider) {
+function changeProvider(provider: QuoteProviderMode) {
   emit('providerChange', provider)
 }
 </script>

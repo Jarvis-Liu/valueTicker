@@ -2,9 +2,10 @@ import { fetchEastmoneyQuotes } from '../services/quotes/eastmoney.adapter'
 import { fetchTencentQuotes } from '../services/quotes/tencent.adapter'
 import { fetchEastmoneyIntradayTrend } from '../services/quotes/eastmoney-trends.adapter'
 import { fetchTencentIntradayTrend } from '../services/quotes/tencent-trends.adapter'
+import { resolveQuoteProvider } from '../services/quotes/provider-routing'
 import { evaluateQuoteAlerts } from '../utils/alert-engine'
 import { getMarketSessionState, getNextAutomaticRefreshAt, isContinuousAuction } from '../utils/market-calendar'
-import type { QuoteProvider, QuoteWorkerRequest, QuoteWorkerResponse, SecurityIntradayTrend } from '../services/quotes/types'
+import type { QuoteProviderMode, QuoteWorkerRequest, QuoteWorkerResponse, SecurityIntradayTrend } from '../services/quotes/types'
 import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
 
 let securities: SecurityItem[] = []
@@ -20,7 +21,7 @@ let trendRefreshInFlight = false
 let trendRefreshPending = false
 let trendRefreshPendingForce = false
 let trendRequestVersion = 0
-let provider: QuoteProvider = 'EASTMONEY'
+let providerMode: QuoteProviderMode = 'MIXED'
 let pollingIntervalMs = 5000
 
 self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
@@ -28,7 +29,7 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
 
   if (message.type === 'START' || message.type === 'UPDATE_SECURITIES') {
     securities = message.securities
-    if (message.provider) provider = message.provider
+    if (message.providerMode) providerMode = message.providerMode
     if (message.type === 'START' && message.alerts) alertConfigs = message.alerts
     if (message.type === 'START') pollingIntervalMs = normalizePollingInterval(message.pollingIntervalMs)
     suppressNextAlerts = true
@@ -41,12 +42,12 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
     return
   }
 
-  if (message.type === 'UPDATE_PROVIDER') {
-    provider = message.provider
+  if (message.type === 'UPDATE_PROVIDER_MODE') {
+    providerMode = message.providerMode
     suppressNextAlerts = true
     trendRequestVersion += 1
     await refreshQuotes()
-    if (windowActive && isContinuousAuction()) await refreshTrends()
+    await refreshTrends(true)
     scheduleQuotes()
     scheduleTrends()
     return
@@ -201,7 +202,7 @@ async function fetchIntradayTrends(nextSecurities: SecurityItem[]) {
           openingPrice: Number.NaN,
           points: [],
           updatedAt: '',
-          provider,
+          provider: resolveQuoteProvider(security, providerMode),
           status: 'ERROR'
         })
       }
@@ -213,16 +214,38 @@ async function fetchIntradayTrends(nextSecurities: SecurityItem[]) {
 }
 
 function fetchQuotes(nextSecurities: SecurityItem[]) {
-  return provider === 'TENCENT' ? fetchTencentQuotes(nextSecurities) : fetchEastmoneyQuotes(nextSecurities)
+  if (providerMode === 'TENCENT') return fetchTencentQuotes(nextSecurities)
+  if (providerMode === 'EASTMONEY') return fetchEastmoneyQuotes(nextSecurities)
+
+  const tencentSecurities: SecurityItem[] = []
+  const eastmoneySecurities: SecurityItem[] = []
+  for (const security of nextSecurities) {
+    const target = resolveQuoteProvider(security, providerMode) === 'EASTMONEY' ? eastmoneySecurities : tencentSecurities
+    target.push(security)
+  }
+
+  return fetchMixedQuotes(tencentSecurities, eastmoneySecurities)
+}
+
+async function fetchMixedQuotes(tencentSecurities: SecurityItem[], eastmoneySecurities: SecurityItem[]) {
+  const requests = [
+    tencentSecurities.length ? fetchTencentQuotes(tencentSecurities) : null,
+    eastmoneySecurities.length ? fetchEastmoneyQuotes(eastmoneySecurities) : null
+  ].filter((request): request is Promise<Awaited<ReturnType<typeof fetchTencentQuotes>>> => request !== null)
+  const results = await Promise.allSettled(requests)
+  const quotes = results.flatMap(result => result.status === 'fulfilled' ? result.value : [])
+
+  if (results.length && results.every(result => result.status === 'rejected')) {
+    throw new Error('混合行情数据源均请求失败')
+  }
+
+  return quotes
 }
 
 function fetchIntradayTrend(security: SecurityItem) {
-  // 趋势图按证券路由：北交所和韩国 KOSPI 需要东财覆盖，其余证券优先腾讯，降低东财请求量与封禁风险。
-  // 主行情 Provider 的切换不影响这一独立趋势源策略。
-  if (security.exchange === 'BSE' || security.providerSymbols.eastmoney?.startsWith('100.') === true) {
-    return fetchEastmoneyIntradayTrend(security)
-  }
-  return fetchTencentIntradayTrend(security)
+  return resolveQuoteProvider(security, providerMode) === 'EASTMONEY'
+    ? fetchEastmoneyIntradayTrend(security)
+    : fetchTencentIntradayTrend(security)
 }
 
 function hasSameSecurityIds(left: SecurityItem[], right: SecurityItem[]) {

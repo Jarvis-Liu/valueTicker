@@ -16,7 +16,7 @@ import QuoteHealthCards from '~/components/quotes/QuoteHealthCards.vue'
 import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
 import IntradayTrendDialog from '~/components/quotes/IntradayTrendDialog.vue'
 import type { IntradayTrendTarget, SecurityQuote, WatchGroup } from '~/types/market'
-import type { NormalizedQuote, QuoteProvider } from '~/services/quotes/types'
+import type { NormalizedQuote, QuoteProviderMode } from '~/services/quotes/types'
 import type { AlertRule, SecurityItem, StockGroupsExportFile } from '~~/shared/types/stock'
 import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
 import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
@@ -50,7 +50,7 @@ const quotes: SecurityQuote[] = [
 ]
 
 const selectedGroupId = ref('all')
-const quoteProvider = ref<QuoteProvider>('EASTMONEY')
+const quoteProviderMode = useLocalStorage<QuoteProviderMode>('value-ticker:provider-mode', 'MIXED')
 const pollingIntervalMs = useLocalStorage<number>('value-ticker:polling-interval-ms', 5000)
 const search = ref('')
 // 仅影响当前表格显示；完整证券集仍参与行情订阅和提醒判断。
@@ -148,7 +148,7 @@ onMounted(async () => {
         // 页面进入只请求一次腾讯成交额；它不加入 5 秒行情轮询。
         void refreshMarketTurnover()
         if (enableQuoteWorker) {
-          quoteMonitor.start(subscriptionSecurities.value, quoteProvider.value, activeAlerts.value, pollingIntervalMs.value)
+          quoteMonitor.start(subscriptionSecurities.value, quoteProviderMode.value, activeAlerts.value, pollingIntervalMs.value)
           monitorStarted = true
           quoteMonitor.updateWindowActivity(isWindowActive())
           quoteMonitor.updateTrendSecurities(trendSecurities.value)
@@ -179,7 +179,7 @@ const rankStockCodes = computed(() => subscriptionSecurities.value
 
 watch(subscriptionSecurities, (nextSecurities) => {
   if (!monitorStarted) return
-  quoteMonitor.updateSecurities(nextSecurities, quoteProvider.value)
+  quoteMonitor.updateSecurities(nextSecurities, quoteProviderMode.value)
 }, { deep: true })
 
 watch(rankStockCodes, nextCodes => fundFlowRanks.updateCodes(nextCodes), { deep: true })
@@ -253,21 +253,21 @@ function syncWindowActivity() {
   if (monitorStarted) quoteMonitor.updateWindowActivity(active)
 }
 
-function changeQuoteProvider(provider: QuoteProvider) {
-  if (quoteProvider.value === provider) return
-  quoteProvider.value = provider
+function changeQuoteProvider(providerMode: QuoteProviderMode) {
+  if (quoteProviderMode.value === providerMode) return
+  quoteProviderMode.value = providerMode
   marketStore.setStatus('RUNNING')
-  if (monitorStarted) quoteMonitor.updateProvider(provider)
+  if (monitorStarted) quoteMonitor.updateProviderMode(providerMode)
 }
 
-function saveMonitorSettings(settings: { provider: QuoteProvider, pollingIntervalMs: number }) {
-  const providerChanged = quoteProvider.value !== settings.provider
-  quoteProvider.value = settings.provider
+function saveMonitorSettings(settings: { provider: QuoteProviderMode, pollingIntervalMs: number }) {
+  const providerChanged = quoteProviderMode.value !== settings.provider
+  quoteProviderMode.value = settings.provider
   pollingIntervalMs.value = settings.pollingIntervalMs
   marketStore.setStatus('RUNNING')
 
   if (monitorStarted) {
-    if (providerChanged) quoteMonitor.updateProvider(settings.provider)
+    if (providerChanged) quoteMonitor.updateProviderMode(settings.provider)
     quoteMonitor.updatePollingInterval(settings.pollingIntervalMs)
   }
 
@@ -643,7 +643,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
     <div class="shrink-0">
       <AppHeader
         :paused="paused"
-        :provider="quoteProvider"
+        :provider="quoteProviderMode"
         :polling-interval-ms="pollingIntervalMs"
         :refreshing="refreshing"
         :last-updated-at="lastUpdatedAt"
@@ -800,7 +800,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
 
     <MonitorSettingsDialog
       :open="monitorSettingsOpen"
-      :provider="quoteProvider"
+      :provider="quoteProviderMode"
       :polling-interval-ms="pollingIntervalMs"
       @close="monitorSettingsOpen = false"
       @save="saveMonitorSettings"

@@ -1,5 +1,5 @@
 import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
-import type { QuoteProvider, QuoteWorkerRequest, QuoteWorkerResponse } from '~/services/quotes/types'
+import type { QuoteProviderMode, QuoteWorkerRequest, QuoteWorkerResponse } from '~/services/quotes/types'
 
 export function useQuoteMonitor() {
   const marketStore = useMarketStore()
@@ -42,17 +42,17 @@ export function useQuoteMonitor() {
     }
   }
 
-  function start(securities: SecurityItem[], provider: QuoteProvider, alerts?: Record<string, SecurityAlerts>, pollingIntervalMs = 5000) {
-    send({ type: 'START', securities, provider, alerts, pollingIntervalMs })
+  function start(securities: SecurityItem[], providerMode: QuoteProviderMode, alerts?: Record<string, SecurityAlerts>, pollingIntervalMs = 5000) {
+    send({ type: 'START', securities, providerMode, alerts, pollingIntervalMs })
   }
-  function updateSecurities(securities: SecurityItem[], provider?: QuoteProvider) {
-    send({ type: 'UPDATE_SECURITIES', securities, provider })
+  function updateSecurities(securities: SecurityItem[], providerMode?: QuoteProviderMode) {
+    send({ type: 'UPDATE_SECURITIES', securities, providerMode })
   }
   function updateAlerts(alerts: Record<string, SecurityAlerts>) {
     send({ type: 'UPDATE_ALERTS', alerts })
   }
-  function updateProvider(provider: QuoteProvider) {
-    send({ type: 'UPDATE_PROVIDER', provider })
+  function updateProviderMode(providerMode: QuoteProviderMode) {
+    send({ type: 'UPDATE_PROVIDER_MODE', providerMode })
   }
   function updatePollingInterval(pollingIntervalMs: number) {
     send({ type: 'UPDATE_POLLING_INTERVAL', pollingIntervalMs })
@@ -82,7 +82,7 @@ export function useQuoteMonitor() {
     worker.value = null
   }
 
-  return { start, updateSecurities, updateAlerts, updateProvider, updatePollingInterval, pause, resume, forceRefresh, refreshSecurities, updateTrendSecurities, updateWindowActivity, stop }
+  return { start, updateSecurities, updateAlerts, updateProviderMode, updatePollingInterval, pause, resume, forceRefresh, refreshSecurities, updateTrendSecurities, updateWindowActivity, stop }
 }
 
 function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
@@ -90,7 +90,7 @@ function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
     return {
       type: 'START',
       securities: message.securities.map(toPlainSecurity),
-      provider: message.provider,
+      providerMode: message.providerMode,
       alerts: cloneAlerts(message.alerts),
       pollingIntervalMs: message.pollingIntervalMs
     }
@@ -108,7 +108,7 @@ function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
     return {
       type: 'UPDATE_SECURITIES',
       securities: message.securities.map(toPlainSecurity),
-      provider: message.provider
+      providerMode: message.providerMode
     }
   }
 

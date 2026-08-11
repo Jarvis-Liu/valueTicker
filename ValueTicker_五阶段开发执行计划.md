@@ -325,6 +325,7 @@ app/services/quotes/
 - 处理 GBK 或其他响应编码；
 - 输出统一的 `NormalizedQuote`；
 - 根据 Provider 上限拆分证券批次；
+- 提供默认混合、仅腾讯、仅东财三种模式，并对单一数据源不支持的证券给出明确提示；
 - 使用 `AbortController` 实现 3 秒超时；
 - 实现至少 80% 有效返回的成功判定；
 - 部分证券失败时保留旧行情并标记 `STALE`；

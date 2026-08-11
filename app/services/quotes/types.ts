@@ -2,6 +2,7 @@ import type { AlertRule, SecurityAlerts, SecurityItem } from '~~/shared/types/st
 
 export type MonitorStatus = 'IDLE' | 'RUNNING' | 'PAUSED' | 'MARKET_CLOSED' | 'STALE' | 'ERROR'
 export type QuoteProvider = 'TENCENT' | 'EASTMONEY'
+export type QuoteProviderMode = 'MIXED' | QuoteProvider
 
 export interface NormalizedQuote {
   securityId: string
@@ -58,7 +59,7 @@ export interface QuoteAlertEvent {
 }
 
 export type QuoteWorkerRequest
-  = | { type: 'START', securities: SecurityItem[], provider: QuoteProvider, alerts?: Record<string, SecurityAlerts>, pollingIntervalMs?: number }
+  = | { type: 'START', securities: SecurityItem[], providerMode: QuoteProviderMode, alerts?: Record<string, SecurityAlerts>, pollingIntervalMs?: number }
     | { type: 'STOP' }
     | { type: 'PAUSE' }
     | { type: 'RESUME' }
@@ -66,9 +67,9 @@ export type QuoteWorkerRequest
     | { type: 'REFRESH_SECURITIES', securities: SecurityItem[] }
     | { type: 'UPDATE_TREND_SECURITIES', securities: SecurityItem[] }
     | { type: 'UPDATE_WINDOW_ACTIVITY', active: boolean }
-    | { type: 'UPDATE_PROVIDER', provider: QuoteProvider }
+    | { type: 'UPDATE_PROVIDER_MODE', providerMode: QuoteProviderMode }
     | { type: 'UPDATE_POLLING_INTERVAL', pollingIntervalMs: number }
-    | { type: 'UPDATE_SECURITIES', securities: SecurityItem[], provider?: QuoteProvider }
+    | { type: 'UPDATE_SECURITIES', securities: SecurityItem[], providerMode?: QuoteProviderMode }
     | { type: 'UPDATE_ALERTS', alerts: Record<string, SecurityAlerts> }
 
 export type QuoteWorkerResponse
