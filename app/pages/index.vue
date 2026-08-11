@@ -22,6 +22,7 @@ import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
 import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 import { fetchMarketTurnoverSnapshots, requestMarketTurnoverSnapshotUpdate } from '~/services/api/market-turnover'
+import { fetchMinuteKlineTestA } from '~/services/api/minute-kline-test'
 import { fetchTencentMarketTurnover } from '~/services/market-turnover/tencent-market-turnover'
 import { getClientMarketTurnoverPhase, getPreviousWeekdayTradeDate, sumMarketTurnover, type MarketTurnoverDisplay } from '~/utils/market-turnover'
 import type { MarketTurnoverSnapshot } from '~~/shared/types/market-turnover'
@@ -289,6 +290,10 @@ function openAlert(quote: SecurityQuote) {
 function openIntradayTrend(target: IntradayTrendTarget) {
   activeTrendTarget.value = target
   intradayTrendDialogOpen.value = true
+  // 临时验证链路：浏览器 -> Nitro 测试接口 A -> 指定 Worker。仅打印原始结果，不参与图表渲染。
+  void fetchMinuteKlineTestA()
+    .then(result => console.log('[ValueTicker][minute-kline-test:A]', result))
+    .catch(error => console.error('[ValueTicker][minute-kline-test:A] 请求失败', error))
 }
 
 function openMarketIndexTrend(securityId: string) {
