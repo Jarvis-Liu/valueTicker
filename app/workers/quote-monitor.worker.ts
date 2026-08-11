@@ -5,6 +5,7 @@ import { fetchTencentIntradayTrend } from '../services/quotes/tencent-trends.ada
 import { resolveQuoteProvider } from '../services/quotes/provider-routing'
 import { evaluateQuoteAlerts } from '../utils/alert-engine'
 import { getMarketSessionState, getNextAutomaticRefreshAt, isContinuousAuction } from '../utils/market-calendar'
+import { shouldRefreshTrendAfterActivation } from '../utils/trend-refresh-policy'
 import type { QuoteProviderMode, QuoteWorkerRequest, QuoteWorkerResponse, SecurityIntradayTrend } from '../services/quotes/types'
 import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
 
@@ -21,6 +22,7 @@ let trendRefreshInFlight = false
 let trendRefreshPending = false
 let trendRefreshPendingForce = false
 let trendRequestVersion = 0
+let lastTrendRefreshedAt = 0
 let providerMode: QuoteProviderMode = 'MIXED'
 let pollingIntervalMs = 5000
 
@@ -67,7 +69,9 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
   if (message.type === 'UPDATE_TREND_SECURITIES') {
     const securitiesChanged = !hasSameSecurityIds(trendSecurities, message.securities)
     trendSecurities = message.securities
-    if (securitiesChanged) trendRequestVersion += 1
+    if (!securitiesChanged) return
+
+    trendRequestVersion += 1
     // 首次进入或切换分组属于主动请求：休市也拉取一次当日分时；后续自动刷新仍只在连续竞价时段执行。
     if (running && windowActive) await refreshTrends(true)
     scheduleTrends()
@@ -75,9 +79,12 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
   }
 
   if (message.type === 'UPDATE_WINDOW_ACTIVITY') {
+    const wasWindowActive = windowActive
     windowActive = message.active
     // 活跃状态仅影响自动轮询；不能废弃进入页面时已发出的强制趋势请求。
-    if (windowActive && isContinuousAuction()) await refreshTrends()
+    if (isContinuousAuction() && shouldRefreshTrendAfterActivation(wasWindowActive, windowActive, lastTrendRefreshedAt)) {
+      await refreshTrends()
+    }
     scheduleTrends()
     return
   }
@@ -173,6 +180,7 @@ async function refreshTrends(force = false) {
 
   try {
     const trends = await fetchIntradayTrends(requestedSecurities)
+    lastTrendRefreshedAt = Date.now()
     if (requestVersion !== trendRequestVersion || (!force && (!windowActive || !isContinuousAuction()))) return
     post({ type: 'TREND_SNAPSHOT', trends, securityIds: requestedSecurities.map(item => item.securityId) })
   } finally {

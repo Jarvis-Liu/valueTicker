@@ -35,6 +35,7 @@ const fundFlowRanks = useFundFlowRanks()
 const supabase = useSupabaseClient()
 const supabaseUser = useSupabaseUser()
 let monitorStarted = false
+let lastReportedWindowActive: boolean | null = null
 // 页面直连测试已确认可用，恢复 Worker 行情轮询。
 const enableQuoteWorker = true
 
@@ -150,7 +151,8 @@ onMounted(async () => {
         if (enableQuoteWorker) {
           quoteMonitor.start(subscriptionSecurities.value, quoteProviderMode.value, activeAlerts.value, pollingIntervalMs.value)
           monitorStarted = true
-          quoteMonitor.updateWindowActivity(isWindowActive())
+          lastReportedWindowActive = isWindowActive()
+          quoteMonitor.updateWindowActivity(lastReportedWindowActive)
           quoteMonitor.updateTrendSecurities(trendSecurities.value)
         }
         fundFlowRanks.start(rankStockCodes.value)
@@ -250,7 +252,10 @@ function isWindowActive() {
 function syncWindowActivity() {
   const active = isWindowActive()
   fundFlowRanks.setWindowActive(active)
-  if (monitorStarted) quoteMonitor.updateWindowActivity(active)
+  if (!monitorStarted || active === lastReportedWindowActive) return
+
+  lastReportedWindowActive = active
+  quoteMonitor.updateWindowActivity(active)
 }
 
 function changeQuoteProvider(providerMode: QuoteProviderMode) {
