@@ -1,6 +1,6 @@
 import type { EastmoneyKlineCacheDocument, EastmoneyKlineResponse } from '~~/shared/types/eastmoney-kline'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getEastmoneyKlineCacheKey, getEastmoneyKlineLockKey, getSharedEastmoneyKline, parseCacheDocument } from './eastmoney-kline-cache'
+import { getEastmoneyKlineCacheKey, getEastmoneyKlineLockKey, getSharedEastmoneyKline, parseCacheDocument, storeRecoveredEastmoneyKline, validateRecoveredPayload } from './eastmoney-kline-cache'
 
 const redis = vi.hoisted(() => ({
   get: vi.fn(),
@@ -120,5 +120,19 @@ describe('eastmoney shared kline cache', () => {
     expect(parseCacheDocument({ ...document('2026-08-12T02:10:00.000Z'), schemaVersion: 2 }, SECID)).toBeNull()
     expect(parseCacheDocument({ ...document('2026-08-12T02:10:00.000Z'), secid: '0.301217' }, SECID)).toBeNull()
     expect(parseCacheDocument({ ...document('2026-08-12T02:10:00.000Z'), payload: { rc: 0, data: { klines: [] } } }, SECID)).toBeNull()
+  })
+
+  it('validates and stores a browser-recovered payload', async () => {
+    redis.get.mockResolvedValue(null)
+    redis.set.mockResolvedValueOnce('OK').mockResolvedValueOnce('OK')
+    const result = await storeRecoveredEastmoneyKline(SECID, payload(), NOW)
+    expect(result.cacheStatus).toBe('MISS')
+    expect(result.warning).toContain('浏览器直连东财恢复')
+    expect(redis.set).toHaveBeenNthCalledWith(2, getEastmoneyKlineCacheKey(SECID), expect.objectContaining({ payload: payload() }), { ex: 1209600 })
+  })
+
+  it('rejects recovered payloads with mismatched codes or malformed rows', () => {
+    expect(() => validateRecoveredPayload(SECID, { ...payload(), data: { ...payload().data, code: '301217' } })).toThrow('结构无效')
+    expect(() => validateRecoveredPayload(SECID, { ...payload(), data: { ...payload().data, klines: ['2026-08-11,broken'] } })).toThrow('明细无效')
   })
 })

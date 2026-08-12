@@ -67,6 +67,40 @@ export async function getSharedEastmoneyKline(event: H3Event, secid: string, now
 }
 
 /**
+ * 校验并保存浏览器从固定东财接口恢复的原始日 K，供后续用户共享命中。
+ * @param secid 东财市场标识与六位证券代码。
+ * @param payload 浏览器从东财直接获得的原始响应。
+ * @param now 服务端接收并确认数据的时间。
+ * @returns 写入后的标准缓存结果；并发请求已写入新数据时返回 HIT。
+ */
+export async function storeRecoveredEastmoneyKline(secid: string, payload: EastmoneyKlineResponse, now = new Date()): Promise<EastmoneyKlineApiResult> {
+  validateRecoveredPayload(secid, payload)
+  const redis = getRedisClient()
+  const cacheKey = getEastmoneyKlineCacheKey(secid)
+  const lockKey = getEastmoneyKlineLockKey(secid)
+  const existing = parseCacheDocument(await redis.get<unknown>(cacheKey), secid)
+  if (existing && isFresh(existing, now)) return toApiResult(existing, 'HIT')
+
+  const requestId = crypto.randomUUID()
+  const acquired = await redis.set(lockKey, requestId, { nx: true, ex: LOCK_TTL_SECONDS })
+  if (!acquired) {
+    const initialized = await waitForInitializedCache(redis, cacheKey, secid)
+    if (initialized && isFresh(initialized, new Date())) return toApiResult(initialized, 'HIT')
+    throw new ApiResponseError(502, 'UPSTREAM_UNAVAILABLE', '历史 K 线共享缓存正在更新，请稍后重试')
+  }
+
+  try {
+    const latest = parseCacheDocument(await redis.get<unknown>(cacheKey), secid)
+    if (latest && isFresh(latest, new Date())) return toApiResult(latest, 'HIT')
+    const document = createCacheDocument(secid, createBeginDate(now), END_DATE, payload, now)
+    await redis.set(cacheKey, document, { ex: REDIS_TTL_SECONDS })
+    return toApiResult(document, latest ?? existing ? 'REFRESHED' : 'MISS', '服务端代理不可用，本次数据由浏览器直连东财恢复并完成共享缓存校验')
+  } finally {
+    await safelyReleaseLock(redis as RedisLockClient, lockKey, requestId)
+  }
+}
+
+/**
  * 生成不含用户标识的东财日 K 全局共享缓存键。
  * @param secid 东财证券标识。
  * @returns 带版本、周期与复权口径的 Redis 键。
@@ -107,6 +141,41 @@ export function parseCacheDocument(value: unknown, expectedSecid: string): Eastm
  */
 export function isFresh(document: EastmoneyKlineCacheDocument, now: Date) {
   return now.getTime() < Date.parse(document.expiresAt)
+}
+
+/**
+ * 严格校验浏览器上报的东财响应，阻止代码错配、异常日期和伪造 K 线污染共享缓存。
+ * @param secid 当前请求声明的东财证券标识。
+ * @param payload 待写入共享缓存的未知可信度响应。
+ * @returns 校验通过时无返回值；任一结构或业务字段异常时抛出 422。
+ */
+export function validateRecoveredPayload(secid: string, payload: EastmoneyKlineResponse): void {
+  const expectedCode = secid.split('.')[1]
+  const rows = payload.data?.klines
+  if (payload.rc !== 0 || payload.data?.code !== expectedCode || !Array.isArray(rows) || !rows.length || rows.length > 500) {
+    throw new ApiResponseError(422, 'INVALID_PAYLOAD', '浏览器恢复的东财历史 K 线结构无效')
+  }
+  let previousDate = ''
+  for (const row of rows) {
+    if (typeof row !== 'string' || row.length > 500) {
+      throw new ApiResponseError(422, 'INVALID_PAYLOAD', '浏览器恢复的东财历史 K 线明细无效')
+    }
+    const fields = row.split(',')
+    const date = fields[0] ?? ''
+    if (fields.length < 11 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < previousDate || !fields.slice(1, 11).every(isValidKlineNumber)) {
+      throw new ApiResponseError(422, 'INVALID_PAYLOAD', '浏览器恢复的东财历史 K 线明细无效')
+    }
+    previousDate = date
+  }
+}
+
+/**
+ * 判断一项东财 K 线数字字段是否为有限数字或允许的缺失占位符。
+ * @param value 逗号分隔行中的单个字段。
+ * @returns 有限数字或 `-`、`--` 时为 true。
+ */
+function isValidKlineNumber(value: string) {
+  return value === '-' || value === '--' || (value.trim() !== '' && Number.isFinite(Number(value)))
 }
 
 /**

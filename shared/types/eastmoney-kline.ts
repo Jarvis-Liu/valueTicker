@@ -43,3 +43,8 @@ export interface EastmoneyKlineApiResult {
   stale: boolean
   warning?: string
 }
+
+export interface RecoverEastmoneyKlinePayload {
+  secid: string
+  payload: EastmoneyKlineResponse
+}
