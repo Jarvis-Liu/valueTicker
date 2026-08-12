@@ -3,9 +3,9 @@
 # 项目名：ValueTicker
 
 > 文档版本：V2.0  
-> 技术栈：Nuxt 4、Vue 3、Nitro、TypeScript、Web Worker、JSON 文件持久化  
+> 技术栈：Nuxt 4、Vue 3、Nitro、TypeScript、Web Worker、Upstash Redis、Cloudflare Worker  
 > 产品范围：A 股及场内 ETF 的分组管理、前端实时行情轮询、价格与涨跌幅提醒  
-> 核心约束：后端不提供 SSE、WebSocket、长轮询或行情转发；行情公开 API 由浏览器直接请求  
+> 核心约束：后端不提供 SSE、WebSocket、长轮询或实时行情轮询；低频历史 K 研究数据允许通过 Nitro、Upstash Redis 与 Cloudflare Worker 共享缓存，必要时由浏览器受控直连恢复  
 > 文档状态：可进入技术评审、开发拆分与测试验收
 
 ---
@@ -24,17 +24,18 @@ Nuxt 页面/UI
        └─ Notification + 站内提醒
 ```
 
-后端只负责：
+后端负责：
 
 1. 校验登录用户；
 2. 读取和写入用户配置 JSON；
 3. 完成分组、分组成员、提醒规则的增删改查；
 4. 保证文件写入原子性、用户隔离和数据结构合法性。
+5. 为低频历史 K 研究数据提供全局共享缓存、受控回源、结构校验和旧值降级。
 
 后端不负责：
 
 - 行情轮询；
-- 行情接口代理；
+- 5 秒级实时行情接口代理和轮询；
 - SSE、WebSocket 或长轮询；
 - 阈值计算；
 - 提醒触发；
@@ -88,7 +89,7 @@ V2 不承诺页面关闭、浏览器进程退出、设备休眠后的持续监�
 ## 3.2 暂不包含
 
 - 云端持续监测；
-- 行情服务端转发；
+- 5 秒级实时行情服务端转发；
 - 短信、微信、邮件提醒；
 - 自动交易；
 - Level-2 行情；
@@ -534,6 +535,283 @@ interface NormalizedQuote {
 
 若某数据源不能在生产环境前端直连，V2 只能禁用该 Provider，不得临时接入未知免费代理。
 
+## 10.6 东方财富历史 K 线共享缓存与浏览器恢复链路
+
+### 10.6.1 适用范围与目标
+
+本节仅适用于筹码分布、收盘价趋势和技术信号使用的东方财富历史日 K，不适用于 5 秒实时行情轮询、分时轮询或提醒判断。
+
+当前历史 K 用于：
+
+- 为 120 个交易日筹码计算窗口提供预热数据；
+- 展示最近 60 个交易日的筹码分布与收盘价趋势；
+- 计算 MA、MACD、KDJ、RSI、BOLL、SAR 等技术指标；
+- 生成金叉、死叉等辅助技术信号。
+
+共享缓存的目标是：
+
+- 减少不同用户、设备和浏览器对东财历史 K 接口的重复请求；
+- 同一证券在业务有效期内由所有用户共享同一份原始响应；
+- 缓存过期时通过证券级锁避免并发穿透；
+- Cloudflare Worker 或东财暂时不可用时优先返回最近一次旧数据；
+- 服务端主回源失败而浏览器仍可直连时，允许浏览器恢复数据并经服务端校验后更新 Redis；
+- 网络获取与指标计算解耦：Nuxt API 负责数据，stock-sdk 只负责标准化后的纯计算。
+
+第一版固定口径：
+
+| 项目 | 约束 |
+|---|---|
+| 市场 | 沪、深、北 A 股股票 |
+| 周期 | 日 K，`klt=101` |
+| 复权 | 前复权，`fqt=1` |
+| 数据源 | 东方财富 |
+| 起始日期 | 服务端或受控客户端生成约 360 个自然日前日期 |
+| 结束日期 | 固定远期日期 `20500101` |
+| 业务有效期 | 真实数据成功写入后的 30 分钟 |
+| Redis 物理 TTL | 14 天 |
+| 本地缓存容量 | 最近访问的 40 只证券 |
+
+ETF、指数和其他当前不支持筹码分布的品种不得发起历史 K 请求。
+
+### 10.6.2 完整调用流程
+
+```text
+用户访问筹码成本单元格或筹码趋势
+                  │
+                  ▼
+      浏览器读取本地筹码缓存（v4）
+          │                       │
+     expiresAt 未到期          无记录或已过期
+          │                       │
+       直接使用                   ▼
+              GET /api/quotes/kline/eastmoney
+                              │
+                              ▼
+                   读取 Redis 全局共享缓存
+          ┌───────────────────┼───────────────────┐
+          │                   │                   │
+       有效缓存             过期缓存              无缓存
+          │                   │                   │
+       返回 HIT       获取证券级更新锁      获取证券级更新锁
+                              │
+                              ▼
+                Cloudflare Worker → 东方财富
+                       │                   │
+                    成功更新            回源失败
+                       │                   │
+              MISS / REFRESHED      有旧值返回 STALE
+                                           │
+                                    无旧值返回 502/504
+                                           │
+                                           ▼
+                              浏览器固定参数直连东方财富
+                                  │                 │
+                                成功              失败
+                                  │                 │
+                                  ▼                 ▼
+               POST /api/quotes/kline/eastmoney-recover
+                                  │              页面 ERROR
+                                  ▼
+                 登录校验 + 严格结构与业务校验
+                                  │
+                         ┌────────┴────────┐
+                         │                 │
+                       通过              拒绝
+                         │                 │
+                  写入共享 Redis       返回 4xx/5xx
+                         │                 │
+                  返回标准结果          页面 ERROR
+```
+
+浏览器直连只在正式 GET 请求出现以下任一情况时启用：
+
+- HTTP 502 或 504；
+- 网络异常或请求超时；
+- 返回结构为 `success:false`；
+- 返回 HTTP 200，但缺少有效 `data`。
+
+正式 GET 与浏览器直连均设置 10 秒前端超时；Cloudflare Worker 服务端请求超时为 8 秒。浏览器恢复链路不是独立数据源，也不绕过服务端缓存规则，成功数据必须回传并通过校验后才能参与筹码计算和共享。
+
+### 10.6.3 Redis 共享缓存设计
+
+历史 K 是全市场公共数据，缓存键不得包含用户 ID：
+
+```text
+value-ticker:kline:eastmoney:v1:{secid}:daily:qfq
+value-ticker:kline-lock:eastmoney:v1:{secid}:daily:qfq
+```
+
+示例：
+
+```text
+value-ticker:kline:eastmoney:v1:1.603259:daily:qfq
+```
+
+缓存文档保存东财原始有效响应：
+
+```typescript
+interface EastmoneyKlineCacheDocument {
+  schemaVersion: 1;
+  secid: string;
+  symbol: string;
+  period: 'daily';
+  adjust: 'qfq';
+  beginDate: string;
+  endDate: string;
+  source: 'EASTMONEY';
+  payload: EastmoneyKlineResponse;
+  sourceUpdatedAt: string | null;
+  fetchedAt: string;
+  expiresAt: string;
+}
+```
+
+`expiresAt` 是业务有效期，Redis TTL 仅负责清理长期无人访问的证券。命中 Redis 时不得重新生成 `fetchedAt` 或延长 `expiresAt`，避免浏览器与 Redis 两层缓存叠加成接近 60 分钟。
+
+### 10.6.4 缓存状态与服务端并发控制
+
+正式 API 返回：
+
+```typescript
+interface EastmoneyKlineApiResult {
+  secid: string;
+  payload: EastmoneyKlineResponse;
+  fetchedAt: string;
+  expiresAt: string;
+  cacheStatus: 'HIT' | 'MISS' | 'REFRESHED' | 'STALE';
+  stale: boolean;
+  warning?: string;
+}
+```
+
+| 状态 | 含义 |
+|---|---|
+| `HIT` | Redis 数据仍在业务有效期内，不回源 |
+| `MISS` | Redis 无记录，本次成功获得数据并写入 |
+| `REFRESHED` | Redis 旧记录已过期，本次成功更新 |
+| `STALE` | 更新失败或锁竞争，返回 Redis 最近一次旧数据 |
+
+缓存缺失或过期时使用：
+
+```text
+SET lockKey requestId NX EX 15
+```
+
+获得锁后必须再次读取 Redis，防止等待期间其他请求已经更新。释放锁使用“比较 requestId 后删除”的 Lua 原子操作，一个请求不得删除另一个请求的新锁。
+
+未取得锁时：
+
+- 有旧缓存：立即返回 `STALE`，不阻塞页面；
+- 无缓存：每 250ms 重读 Redis，最多两次；
+- 仍无数据：返回明确错误，禁止并发请求同时穿透至上游。
+
+### 10.6.5 浏览器直连与安全回传
+
+浏览器恢复请求使用代码内固定的东财 HTTPS 地址、字段、日线周期和前复权口径。调用方只能提供合法 `secid`，不能指定上游 URL、Cookie、`fields`、`ut`、缓存键、TTL 或 `expiresAt`。
+
+恢复写入接口：
+
+```http
+POST /api/quotes/kline/eastmoney-recover
+Content-Type: application/json
+
+{
+  "secid": "0.301217",
+  "payload": {
+    "rc": 0,
+    "data": {
+      "code": "301217",
+      "klines": []
+    }
+  }
+}
+```
+
+由于该接口会更新所有用户共享的 Redis 数据，服务端必须执行以下校验：
+
+1. 请求用户已经登录，身份只用于限制写入口，不进入缓存键；
+2. `secid` 仅允许 `0|1 + 六位代码`；
+3. `payload.rc === 0`；
+4. `payload.data.code` 必须与 `secid` 中的六位代码一致；
+5. `klines` 必须是非空数组且不超过 500 条；
+6. 单条字符串长度不得超过 500；
+7. 每条至少包含 f51–f61；
+8. 日期格式必须为 `YYYY-MM-DD` 且按升序排列；
+9. 开高低收、成交量、成交额、振幅、涨跌幅、涨跌额和换手率必须是有限数字或允许的缺失占位符；
+10. `fetchedAt`、`expiresAt`、Redis TTL 和缓存状态全部由服务端生成。
+
+校验通过后仍需获取同一证券更新锁并二次读取缓存。如果其他请求已经写入新鲜数据，直接返回 `HIT`；否则写入共享缓存并返回 `MISS` 或 `REFRESHED`。任何校验失败都不得写入 Redis。
+
+浏览器不会将 `.env` 中的服务端 Cookie 带入直连请求；服务端密钥、Redis Token、Worker 地址和 Cookie 不得返回前端或写入日志。
+
+### 10.6.6 前端缓存与计算职责
+
+浏览器本地缓存条目保存：
+
+```typescript
+interface LocalChipCacheEntry {
+  snapshot: ChipDistributionSnapshot;
+  lastAccessedAt: string;
+}
+```
+
+读取条件必须为：
+
+```typescript
+Date.now() < Date.parse(snapshot.expiresAt)
+```
+
+前端不得按收到响应的时间重新计算 30 分钟。相同证券的多个组件调用共享同一个 Promise；不同证券最多同时执行三个筹码请求。本地缓存按 `lastAccessedAt` 做 LRU 清理，最多保留 40 只证券。
+
+网络数据取得后：
+
+1. 将东财 f51–f61 字符串标准化为 stock-sdk `HistoryKline`；
+2. 使用 `addIndicators` 计算技术指标；
+3. 使用 `calcChipDistribution` 计算 120 日窗口并输出最近 60 日；
+4. 使用 `calcSignals` 生成技术信号；
+5. `STALE` 数据仍可参与计算，但应输出非阻断降级日志；
+6. 两条数据获取链路均失败时进入 `ERROR`，由用户点击“重新加载”。
+
+该模块不得进入实时行情 Worker，不得参与提醒阈值判断，也不得跟随 5 秒轮询。
+
+### 10.6.7 正式接口、错误行为与回滚
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| GET | `/api/quotes/kline/eastmoney?secid=1.603259&klt=101&fqt=1` | 读取或更新共享缓存 |
+| POST | `/api/quotes/kline/eastmoney-recover` | 校验浏览器恢复数据并更新共享缓存 |
+
+HTTP 行为：
+
+- `HIT/MISS/REFRESHED/STALE` 返回 HTTP 200 和 `success:true`；
+- 参数或恢复数据校验失败返回 422；
+- 恢复写入口未登录返回 401；
+- 无旧缓存且上游不可用返回 502；
+- 上游超时返回 504；
+- Redis 写入失败返回相应存储错误，禁止伪装为成功。
+
+迁移观察期保留：
+
+```env
+SERVER_KLINE_CACHE_ENABLED=false
+```
+
+设置为 `false` 时，筹码历史 K 临时回退到 stock-sdk 旧获取链路；未配置或不为 `false` 时启用共享缓存。稳定运行并完成数据一致性验证后，可移除旧路径和开关。
+
+### 10.6.8 验收与测试要求
+
+- 首次访问返回 `MISS`，相同证券在有效期内跨用户访问返回 `HIT`；
+- 缓存过期后成功更新返回 `REFRESHED`；
+- 上游失败且存在旧值时返回 `STALE`，筹码图仍能打开；
+- 上游失败且无旧值时触发浏览器直连，成功后回传并更新 Redis；
+- 浏览器恢复数据代码错配、乱序、字段损坏或数量越界时拒绝写入；
+- 同一证券并发缓存更新最多产生一次真实回源或恢复写入；
+- 一个请求不能误删另一个请求持有的锁；
+- 本地缓存命中时不请求服务端，且严格服从后端原始 `expiresAt`；
+- 迁移前后相同 K 线输入生成的筹码、收盘价和技术信号口径一致；
+- Network 中正常主链只出现本站 GET；只有主链失败时才出现东财直连和本站恢复 POST；
+- 日志不得包含 Cookie、Redis Token、Worker 密钥或完整敏感请求头。
+
 ---
 
 # 11. 提醒引擎
@@ -616,7 +894,7 @@ interface AlertRuntimeState {
 
 ## 13.1 后端职责
 
-Nitro 只提供用户配置 CRUD，不参与实时行情。
+Nitro 提供用户配置 CRUD，并为低频东方财富历史 K 提供共享缓存与恢复写入；不参与 5 秒实时行情轮询、提醒计算或行情推送。
 
 必须实现：
 
@@ -631,7 +909,7 @@ Nitro 只提供用户配置 CRUD，不参与实时行情。
 
 ## 13.2 精简接口清单
 
-V2 推荐 **9 个接口**：
+V2 的业务配置闭环包含 **9 个 CRUD 接口**，另有 2 个低频历史 K 共享缓存接口：
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
@@ -644,11 +922,13 @@ V2 推荐 **9 个接口**：
 | DELETE | `/api/stock-groups/:groupId/members/:securityId` | 删除分组股票 |
 | POST | `/api/stock-groups/:groupId/members/transfer` | 移动或复制股票 |
 | PUT | `/api/stock-alerts/:securityId` | 新增、修改或关闭提醒配置 |
+| GET | `/api/quotes/kline/eastmoney` | 读取或更新东方财富历史 K 全局共享缓存 |
+| POST | `/api/quotes/kline/eastmoney-recover` | 校验浏览器恢复数据并更新共享缓存 |
 
 不提供：
 
-- 行情接口；
-- 行情代理；
+- 5 秒实时行情轮询接口；
+- 通用或任意目标行情代理；
 - 证券搜索接口；
 - SSE；
 - WebSocket；
@@ -935,10 +1215,10 @@ PUT /api/stock-alerts/{securityId}
 
 ## AC-01 后端边界
 
-- 后端仅提供 9 个配置 CRUD 接口；
-- Network 面板中不存在行情请求发往本站 Nitro；
+- 后端提供 9 个配置 CRUD 接口和 2 个受控的低频历史 K 共享缓存接口；
+- 5 秒实时行情轮询请求不发往本站 Nitro；
 - 不存在 SSE、WebSocket、长轮询端点；
-- 行情请求全部由 Leader 标签页的 Worker 发出。
+- 实时行情请求全部由 Leader 标签页的 Worker 发出；历史 K 按 10.6 节独立执行且不进入 Worker。
 
 ## AC-02 分组 CRUD
 
@@ -1013,6 +1293,8 @@ PUT /api/stock-alerts/{securityId}
 - 用户配置初始化；
 - JSON 存储服务；
 - 9 个 CRUD 接口；
+- 2 个历史 K 共享缓存与恢复接口；
+- Redis 共享缓存、证券级更新锁和 STALE 降级；
 - Schema 校验；
 - 原子写入；
 - 用户级写锁；
@@ -1072,8 +1354,8 @@ PUT /api/stock-alerts/{securityId}
 
 V2 满足以下条件才可上线：
 
-1. 后端只承担配置 CRUD 和 JSON 持久化，不存在行情代理或推送服务；
-2. 9 个后端接口均有请求校验、错误码和测试；
+1. 后端承担配置 CRUD、配置持久化和低频历史 K 共享缓存，不提供 5 秒实时行情代理或推送服务；
+2. 9 个配置接口和 2 个历史 K 接口均有请求校验、错误码和测试；
 3. 行情由前端 Worker 直接访问公开 API；
 4. 多标签页只保留一个轮询主实例；
 5. 前台交易时段轮询无明显漂移和请求堆积；

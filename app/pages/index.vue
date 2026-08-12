@@ -22,6 +22,7 @@ import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
 import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 import { fetchMarketTurnoverSnapshots, requestMarketTurnoverSnapshotUpdate } from '~/services/api/market-turnover'
+import { fetchTencentIntradayFromProxy } from '~/services/api/tencent-intraday'
 import { fetchTencentMarketTurnover } from '~/services/market-turnover/tencent-market-turnover'
 import { getClientMarketTurnoverPhase, getPreviousWeekdayTradeDate, sumMarketTurnover, type MarketTurnoverDisplay } from '~/utils/market-turnover'
 import type { MarketTurnoverSnapshot } from '~~/shared/types/market-turnover'
@@ -289,6 +290,15 @@ function openAlert(quote: SecurityQuote) {
 function openIntradayTrend(target: IntradayTrendTarget) {
   activeTrendTarget.value = target
   intradayTrendDialogOpen.value = true
+}
+
+/** 点击左上角 Logo 调用腾讯分时正式 API；结果只输出到控制台，不进入行情状态。 */
+function testMinuteKlineProxy() {
+  void fetchTencentIntradayFromProxy('sz300620')
+    .then((result) => {
+      console.log('[ValueTicker][腾讯分时正式接口测试]', result)
+    })
+    .catch(error => console.error('[ValueTicker][腾讯分时正式接口测试] 请求失败', error))
 }
 
 function openMarketIndexTrend(securityId: string) {
@@ -661,6 +671,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         @refresh="refresh"
         @settings="monitorSettingsOpen = true"
         @notifications="alertNotificationsOpen = true"
+        @logo-click="testMinuteKlineProxy"
         @sign-out="signOut"
       />
       <div class="border-b border-slate-200/70 bg-[#f3f6f4]/95 shadow-sm backdrop-blur">

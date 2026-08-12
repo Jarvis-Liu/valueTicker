@@ -10,6 +10,8 @@ export type ApiErrorCode
     | 'INVALID_PAYLOAD'
     | 'STORAGE_WRITE_FAILED'
     | 'SECURITY_SEARCH_FAILED'
+    | 'UPSTREAM_UNAVAILABLE'
+    | 'UPSTREAM_TIMEOUT'
 
 export interface ApiError {
   code: ApiErrorCode

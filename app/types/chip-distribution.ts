@@ -28,6 +28,10 @@ export interface ChipDistributionSnapshot {
   points: ChipDistributionPoint[]
   signals: ChipTechnicalSignal[]
   fetchedAt: string
+  expiresAt: string
+  cacheStatus: 'HIT' | 'MISS' | 'REFRESHED' | 'STALE'
+  stale: boolean
+  warning?: string
 }
 
 export interface ChipDistributionEntry {
