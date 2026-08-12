@@ -1,9 +1,9 @@
 import type { ChipDistributionEntry, ChipDistributionSnapshot, ChipDistributionTarget } from '~/types/chip-distribution'
 import { fetchChipDistribution, isChipDistributionSupported } from '~/services/chips/stock-sdk-chips'
 
-// v3 增加近 60 日技术信号，避免读取缺少 signals 字段的旧版缓存。
-const CACHE_PREFIX = 'value-ticker:chips:v3:'
-const CACHE_TTL_MS = 30 * 60 * 1000
+// v4 使用服务端下发的 expiresAt，避免浏览器与 Redis 两层各延长 30 分钟。
+const CACHE_PREFIX = 'value-ticker:chips:v4:'
+const MAX_LOCAL_CACHE_ENTRIES = 40
 const MAX_CONCURRENT_REQUESTS = 3
 const pendingRequests = new Map<string, Promise<ChipDistributionEntry>>()
 const requestWaiters: Array<() => void> = []
@@ -11,9 +11,23 @@ let activeRequestCount = 0
 
 const idleEntry = (): ChipDistributionEntry => ({ status: 'IDLE', snapshot: null, errorMessage: '' })
 
+interface LocalChipCacheEntry {
+  snapshot: ChipDistributionSnapshot
+  lastAccessedAt: string
+}
+
+/**
+ * 提供筹码快照的页面状态、同证券请求合并、并发限制和本地 LRU 缓存。
+ * @returns 查询、确保加载、刷新已加载证券及支持范围判断方法。
+ */
 export function useChipDistribution() {
   const entries = useState<Record<string, ChipDistributionEntry>>('chip-distribution-entries', () => ({}))
 
+  /**
+   * 返回目标证券当前页面状态，不支持的证券直接返回 UNSUPPORTED。
+   * @param target 证券目标或空值。
+   * @returns 当前筹码加载状态。
+   */
   function getEntry(target: ChipDistributionTarget | null | undefined) {
     if (!target) return idleEntry()
     if (!isChipDistributionSupported(target)) {
@@ -22,11 +36,17 @@ export function useChipDistribution() {
     return entries.value[target.securityId] ?? idleEntry()
   }
 
+  /**
+   * 确保证券具有未过期筹码快照，同一证券的并发调用共享同一个 Promise。
+   * @param target 需要加载的证券。
+   * @param force 是否跳过浏览器缓存并重新请求服务端。
+   * @returns 最终筹码条目状态。
+   */
   async function ensure(target: ChipDistributionTarget, force = false) {
     if (!isChipDistributionSupported(target)) return getEntry(target)
 
     const current = entries.value[target.securityId]
-    if (!force && current?.status === 'READY') return current
+    if (!force && current?.status === 'READY' && isSnapshotFresh(current.snapshot)) return current
     if (!force) {
       const cached = readCache(target.securityId)
       if (cached) {
@@ -44,6 +64,11 @@ export function useChipDistribution() {
     return request
   }
 
+  /**
+   * 在全局并发槽内执行一次筹码请求并同步页面状态和本地缓存。
+   * @param target 当前证券目标。
+   * @returns READY、EMPTY 或 ERROR 条目。
+   */
   async function runRequest(target: ChipDistributionTarget) {
     entries.value[target.securityId] = {
       status: 'LOADING',
@@ -53,6 +78,7 @@ export function useChipDistribution() {
     await acquireRequestSlot()
     try {
       const snapshot = await fetchChipDistribution(target)
+      if (snapshot.stale) console.warn('[ValueTicker][历史 K 线降级]', target.securityId, snapshot.warning ?? '当前使用共享缓存旧数据')
       const entry: ChipDistributionEntry = snapshot.points.length
         ? { status: 'READY', snapshot, errorMessage: '' }
         : { status: 'EMPTY', snapshot, errorMessage: '暂无可用筹码数据' }
@@ -72,6 +98,11 @@ export function useChipDistribution() {
     }
   }
 
+  /**
+   * 强制刷新当前页面已经加载过快照的证券，不预热从未访问的股票。
+   * @param targets 当前页面可见证券集合。
+   * @returns 所有已加载证券的刷新任务完成后结束。
+   */
   async function refreshLoaded(targets: ChipDistributionTarget[]) {
     const loadedTargets = targets.filter(target => entries.value[target.securityId]?.snapshot)
     await Promise.all(loadedTargets.map(target => ensure(target, true)))
@@ -80,6 +111,10 @@ export function useChipDistribution() {
   return { entries, getEntry, ensure, refreshLoaded, isSupported: isChipDistributionSupported }
 }
 
+/**
+ * 获取最多三个并行任务中的一个执行槽，满载时按先进先出等待。
+ * @returns 获得槽位后结束。
+ */
 async function acquireRequestSlot() {
   if (activeRequestCount < MAX_CONCURRENT_REQUESTS) {
     activeRequestCount += 1
@@ -89,33 +124,82 @@ async function acquireRequestSlot() {
   activeRequestCount += 1
 }
 
+/**
+ * 释放一个请求槽并唤醒最早等待者。
+ * @returns 无返回值。
+ */
 function releaseRequestSlot() {
   activeRequestCount = Math.max(0, activeRequestCount - 1)
   requestWaiters.shift()?.()
 }
 
+/**
+ * 读取基于服务端 expiresAt 的浏览器筹码缓存，并更新 LRU 访问时间。
+ * @param securityId 项目证券 ID。
+ * @returns 未过期快照；无记录、损坏或过期时返回 null。
+ */
 function readCache(securityId: string): ChipDistributionSnapshot | null {
   if (!import.meta.client) return null
   try {
     const raw = localStorage.getItem(`${CACHE_PREFIX}${securityId}`)
     if (!raw) return null
-    const snapshot = JSON.parse(raw) as ChipDistributionSnapshot
-    const fetchedAt = new Date(snapshot.fetchedAt).getTime()
-    if (!Number.isFinite(fetchedAt) || Date.now() - fetchedAt > CACHE_TTL_MS || !Array.isArray(snapshot.points)) {
+    const entry = JSON.parse(raw) as LocalChipCacheEntry
+    const snapshot = entry.snapshot
+    if (!snapshot || !isSnapshotFresh(snapshot) || !Array.isArray(snapshot.points)) {
       localStorage.removeItem(`${CACHE_PREFIX}${securityId}`)
       return null
     }
+    entry.lastAccessedAt = new Date().toISOString()
+    localStorage.setItem(`${CACHE_PREFIX}${securityId}`, JSON.stringify(entry))
     return snapshot
   } catch {
     return null
   }
 }
 
+/**
+ * 保存筹码快照及访问时间，并按最近访问顺序最多保留 40 只证券。
+ * @param snapshot 服务端有效期驱动的筹码快照。
+ * @returns 无返回值；浏览器存储不可用时静默退化为页面内缓存。
+ */
 function writeCache(snapshot: ChipDistributionSnapshot) {
   if (!import.meta.client) return
   try {
-    localStorage.setItem(`${CACHE_PREFIX}${snapshot.securityId}`, JSON.stringify(snapshot))
+    const entry: LocalChipCacheEntry = { snapshot, lastAccessedAt: new Date().toISOString() }
+    localStorage.setItem(`${CACHE_PREFIX}${snapshot.securityId}`, JSON.stringify(entry))
+    pruneLocalCache()
   } catch {
     // 浏览器存储不可用时退化为页面内缓存，不影响数据展示。
   }
+}
+
+/**
+ * 判断筹码快照是否仍处于后端原始 expiresAt 之前。
+ * @param snapshot 可能为空的筹码快照。
+ * @returns 有合法未来过期时间时为 true。
+ */
+function isSnapshotFresh(snapshot: ChipDistributionSnapshot | null | undefined) {
+  if (!snapshot) return false
+  const expiresAt = Date.parse(snapshot.expiresAt)
+  return Number.isFinite(expiresAt) && Date.now() < expiresAt
+}
+
+/**
+ * 扫描当前版本缓存并删除最久未访问项，防止 localStorage 无限制增长。
+ * @returns 无返回值。
+ */
+function pruneLocalCache() {
+  const entries: Array<{ key: string, lastAccessedAt: number }> = []
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (!key?.startsWith(CACHE_PREFIX)) continue
+    try {
+      const item = JSON.parse(localStorage.getItem(key) ?? '') as LocalChipCacheEntry
+      entries.push({ key, lastAccessedAt: Date.parse(item.lastAccessedAt) || 0 })
+    } catch {
+      localStorage.removeItem(key)
+    }
+  }
+  entries.sort((left, right) => right.lastAccessedAt - left.lastAccessedAt)
+  for (const item of entries.slice(MAX_LOCAL_CACHE_ENTRIES)) localStorage.removeItem(item.key)
 }
