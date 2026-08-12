@@ -290,9 +290,15 @@ function openAlert(quote: SecurityQuote) {
 function openIntradayTrend(target: IntradayTrendTarget) {
   activeTrendTarget.value = target
   intradayTrendDialogOpen.value = true
-  // 临时验证链路：浏览器 -> Nitro 测试接口 A -> 指定 Worker。仅打印原始结果，不参与图表渲染。
+}
+
+/** 点击左上角 Logo 运行临时代理测试；结果只输出到控制台。 */
+function testMinuteKlineProxy() {
   void fetchMinuteKlineTestA()
-    .then(result => console.log('[ValueTicker][minute-kline-test:A]', result))
+    .then((result) => {
+      console.log('[ValueTicker][测试接口A][东方财富日K]', result.eastmoney)
+      console.log('[ValueTicker][测试接口A][腾讯分时]', result.tencent)
+    })
     .catch(error => console.error('[ValueTicker][minute-kline-test:A] 请求失败', error))
 }
 
@@ -666,6 +672,7 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         @refresh="refresh"
         @settings="monitorSettingsOpen = true"
         @notifications="alertNotificationsOpen = true"
+        @logo-click="testMinuteKlineProxy"
         @sign-out="signOut"
       />
       <div class="border-b border-slate-200/70 bg-[#f3f6f4]/95 shadow-sm backdrop-blur">

@@ -12,6 +12,11 @@ export default defineNuxtConfig({
     enabled: true
   },
 
+  runtimeConfig: {
+    // Cloudflare 行情代理根地址，仅供服务端测试接口读取，不暴露到客户端运行时配置。
+    cloudflareWorkerUrl: process.env.CLOUDFLARE_WORKER_URL ?? ''
+  },
+
   compatibilityDate: '2025-01-15',
 
   eslint: {
