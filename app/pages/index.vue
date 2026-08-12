@@ -22,7 +22,7 @@ import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
 import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 import { fetchMarketTurnoverSnapshots, requestMarketTurnoverSnapshotUpdate } from '~/services/api/market-turnover'
-import { fetchMinuteKlineTestA } from '~/services/api/minute-kline-test'
+import { fetchTencentIntradayFromProxy } from '~/services/api/tencent-intraday'
 import { fetchTencentMarketTurnover } from '~/services/market-turnover/tencent-market-turnover'
 import { getClientMarketTurnoverPhase, getPreviousWeekdayTradeDate, sumMarketTurnover, type MarketTurnoverDisplay } from '~/utils/market-turnover'
 import type { MarketTurnoverSnapshot } from '~~/shared/types/market-turnover'
@@ -292,14 +292,13 @@ function openIntradayTrend(target: IntradayTrendTarget) {
   intradayTrendDialogOpen.value = true
 }
 
-/** 点击左上角 Logo 运行临时代理测试；结果只输出到控制台。 */
+/** 点击左上角 Logo 调用腾讯分时正式 API；结果只输出到控制台，不进入行情状态。 */
 function testMinuteKlineProxy() {
-  void fetchMinuteKlineTestA()
+  void fetchTencentIntradayFromProxy('sz300620')
     .then((result) => {
-      console.log('[ValueTicker][测试接口A][东方财富日K]', result.eastmoney)
-      console.log('[ValueTicker][测试接口A][腾讯分时]', result.tencent)
+      console.log('[ValueTicker][腾讯分时正式接口测试]', result)
     })
-    .catch(error => console.error('[ValueTicker][minute-kline-test:A] 请求失败', error))
+    .catch(error => console.error('[ValueTicker][腾讯分时正式接口测试] 请求失败', error))
 }
 
 function openMarketIndexTrend(securityId: string) {

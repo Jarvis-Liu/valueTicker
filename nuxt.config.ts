@@ -13,7 +13,7 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    // Cloudflare 行情代理根地址，仅供服务端测试接口读取，不暴露到客户端运行时配置。
+    // Cloudflare 行情代理根地址，仅供 Nitro 正式行情 API 与测试接口读取，不暴露给客户端。
     cloudflareWorkerUrl: process.env.CLOUDFLARE_WORKER_URL ?? ''
   },
 
