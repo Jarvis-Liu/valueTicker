@@ -80,7 +80,7 @@ function formatPrice(value: number) {
   >
     <div
       v-if="range"
-      class="mx-auto w-[124px]"
+      class="ml-auto w-[124px]"
     >
       <div class="relative mx-1.5 h-3">
         <span class="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-slate-200" />
@@ -116,7 +116,7 @@ function formatPrice(value: number) {
     </div>
     <span
       v-else-if="entry.status === 'LOADING' || entry.status === 'IDLE'"
-      class="mx-auto block h-8 w-28 animate-pulse rounded bg-slate-100"
+      class="ml-auto block h-8 w-28 animate-pulse rounded bg-slate-100"
     />
     <span
       v-else

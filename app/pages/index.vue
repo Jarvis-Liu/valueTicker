@@ -52,6 +52,7 @@ const quotes: SecurityQuote[] = [
 ]
 
 const selectedGroupId = ref('all')
+const groupSidebarCollapsed = useLocalStorage<boolean>('value-ticker:group-sidebar-collapsed', false)
 const quoteProviderMode = useLocalStorage<QuoteProviderMode>('value-ticker:provider-mode', 'MIXED')
 const pollingIntervalMs = useLocalStorage<number>('value-ticker:polling-interval-ms', 5000)
 const search = ref('')
@@ -731,8 +732,14 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         </div>
       </div>
       <div class="mx-auto min-h-full max-w-[1680px]">
-        <div class="grid min-h-full min-w-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_280px]">
+        <div
+          class="grid min-h-full min-w-0 gap-4"
+          :class="groupSidebarCollapsed
+            ? 'lg:grid-cols-[72px_minmax(0,1fr)] xl:grid-cols-[72px_minmax(0,1fr)_280px]'
+            : 'lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_280px]'"
+        >
           <GroupSidebar
+            v-model:collapsed="groupSidebarCollapsed"
             :groups="groups"
             :selected-id="selectedGroupId"
             @select="selectGroup"

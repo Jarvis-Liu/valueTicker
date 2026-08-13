@@ -32,7 +32,28 @@ const search = defineModel<string>('search', { default: '' })
 const onlyAlerted = defineModel<boolean>('onlyAlerted', { default: false })
 const menuPositions = reactive<Record<string, { top: string, left: string }>>({})
 type ChangePercentSort = 'default' | 'descending' | 'ascending'
+type OptionalQuoteColumn = 'trend' | 'open' | 'high' | 'low' | 'previousClose' | 'costRange' | 'status'
+type QuoteColumnVisibility = Record<OptionalQuoteColumn, boolean>
 const changePercentSort = ref<ChangePercentSort>('default')
+const columnVisibility = useLocalStorage<QuoteColumnVisibility>('value-ticker:quote-table-columns:v1', {
+  trend: true,
+  open: true,
+  high: true,
+  low: true,
+  previousClose: true,
+  costRange: true,
+  status: true
+}, { mergeDefaults: true })
+
+const optionalColumnOptions: Array<{ key: OptionalQuoteColumn, label: string, width: number }> = [
+  { key: 'trend', label: '当日走势', width: 128 },
+  { key: 'open', label: '今开', width: 72 },
+  { key: 'high', label: '最高', width: 72 },
+  { key: 'low', label: '最低', width: 72 },
+  { key: 'previousClose', label: '昨收', width: 72 },
+  { key: 'costRange', label: '成本区间', width: 160 },
+  { key: 'status', label: '状态', width: 72 }
+]
 
 const emit = defineEmits<{
   alert: [quote: SecurityQuote]
@@ -70,6 +91,13 @@ const changePercentSortLabel = computed(() => {
   if (changePercentSort.value === 'ascending') return '涨幅从低到高；点击恢复默认顺序'
   return '按涨跌幅排序；点击后涨幅从高到低'
 })
+const hiddenColumnCount = computed(() => optionalColumnOptions.filter(column => !isColumnVisible(column.key)).length)
+const filterActive = computed(() => onlyAlerted.value || hiddenColumnCount.value > 0)
+const tableMinWidth = computed(() => {
+  const optionalWidth = optionalColumnOptions.reduce((total, column) => total + (isColumnVisible(column.key) ? column.width : 0), 0)
+  return `${520 + optionalWidth}px`
+})
+const tableColumnCount = computed(() => 4 + optionalColumnOptions.filter(column => isColumnVisible(column.key)).length)
 const emptyMessage = computed(() => onlyAlerted.value ? '没有已开启提醒的证券' : search.value.trim() ? '没有匹配的证券' : '暂无证券')
 
 function handleQuoteReorder(nextQuotes: SecurityQuote[]) {
@@ -79,6 +107,15 @@ function toggleChangePercentSort() {
   changePercentSort.value = changePercentSort.value === 'default'
     ? 'descending'
     : changePercentSort.value === 'descending' ? 'ascending' : 'default'
+}
+function isColumnVisible(column: OptionalQuoteColumn) {
+  return columnVisibility.value[column] !== false
+}
+function toggleColumn(column: OptionalQuoteColumn) {
+  columnVisibility.value = {
+    ...columnVisibility.value,
+    [column]: !isColumnVisible(column)
+  }
 }
 function positionMenu(securityId: string, event: MouseEvent) {
   const button = event.currentTarget as HTMLElement
@@ -176,14 +213,14 @@ function pad(value: number) {
           <MenuButton
             type="button"
             class="icon-button border transition"
-            :class="onlyAlerted ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-transparent'"
-            :aria-label="onlyAlerted ? '筛选已启用：只看提醒' : '筛选行情'"
-            :aria-pressed="onlyAlerted"
+            :class="filterActive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-transparent'"
+            :aria-label="filterActive ? `显示设置已启用${hiddenColumnCount ? `：隐藏 ${hiddenColumnCount} 列` : '：只看提醒'}` : '筛选行情与设置表格列'"
+            :aria-pressed="filterActive"
             title="筛选行情"
           >
             <IconAdjustmentsHorizontal :size="18" />
           </MenuButton>
-          <MenuItems class="absolute right-0 top-[calc(100%+6px)] z-30 w-40 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl shadow-slate-900/10 focus:outline-none">
+          <MenuItems class="absolute right-0 top-[calc(100%+6px)] z-30 w-48 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl shadow-slate-900/10 focus:outline-none">
             <MenuItem v-slot="{ active }">
               <button
                 type="button"
@@ -198,6 +235,25 @@ function pad(value: number) {
                 只看提醒
               </button>
             </MenuItem>
+            <div class="my-1.5 h-px bg-slate-100" />
+            <p class="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              表格列
+            </p>
+            <button
+              v-for="column in optionalColumnOptions"
+              :key="column.key"
+              type="button"
+              role="menuitemcheckbox"
+              :aria-checked="isColumnVisible(column.key)"
+              class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none"
+              @click.stop="toggleColumn(column.key)"
+            >
+              <span
+                class="grid h-4 w-4 place-items-center rounded border text-[10px]"
+                :class="isColumnVisible(column.key) ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-transparent'"
+              >✓</span>
+              {{ column.label }}
+            </button>
           </MenuItems>
         </Menu>
         <button
@@ -212,13 +268,19 @@ function pad(value: number) {
     </div>
 
     <div class="max-h-[550px] overflow-auto">
-      <table class="w-full min-w-[1200px] border-separate border-spacing-0 text-left">
+      <table
+        class="w-full border-separate border-spacing-0 text-left"
+        :style="{ minWidth: tableMinWidth }"
+      >
         <thead class="sticky top-0 z-20 bg-white">
           <tr class="text-[11px] font-medium text-slate-400">
             <th class="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3 font-medium">
               证券
             </th>
-            <th class="border-b border-slate-100 px-3 py-3 font-medium">
+            <th
+              v-if="isColumnVisible('trend')"
+              class="border-b border-slate-100 px-3 py-3 font-medium"
+            >
               当日走势
             </th>
             <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
@@ -248,22 +310,40 @@ function pad(value: number) {
                 />
               </button>
             </th>
-            <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
+            <th
+              v-if="isColumnVisible('open')"
+              class="border-b border-slate-100 px-3 py-3 text-right font-medium"
+            >
               今开
             </th>
-            <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
+            <th
+              v-if="isColumnVisible('high')"
+              class="border-b border-slate-100 px-3 py-3 text-right font-medium"
+            >
               最高
             </th>
-            <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
+            <th
+              v-if="isColumnVisible('low')"
+              class="border-b border-slate-100 px-3 py-3 text-right font-medium"
+            >
               最低
             </th>
-            <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
+            <th
+              v-if="isColumnVisible('previousClose')"
+              class="border-b border-slate-100 px-3 py-3 text-right font-medium"
+            >
               昨收
             </th>
-            <th class="border-b border-slate-100 px-3 py-3 text-right font-medium">
+            <th
+              v-if="isColumnVisible('costRange')"
+              class="border-b border-slate-100 px-3 py-3 text-right font-medium"
+            >
               70%成本区间
             </th>
-            <th class="border-b border-slate-100 px-3 py-3 font-medium">
+            <th
+              v-if="isColumnVisible('status')"
+              class="border-b border-slate-100 px-3 py-3 font-medium"
+            >
               状态
             </th>
             <th class="border-b border-slate-100 px-5 py-3 text-right font-medium">
@@ -317,7 +397,10 @@ function pad(value: number) {
                 </div>
               </div>
             </td>
-            <td class="border-b border-slate-100 px-3 py-3.5">
+            <td
+              v-if="isColumnVisible('trend')"
+              class="border-b border-slate-100 px-3 py-3.5"
+            >
               <IntradayTrendSparkline
                 :trend="trends[quote.securityId]"
                 interactive
@@ -349,22 +432,40 @@ function pad(value: number) {
                 {{ signed(quote.change) }}
               </p>
             </td>
-            <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
+            <td
+              v-if="isColumnVisible('open')"
+              class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number"
+            >
               {{ formatted(quote.open) }}
             </td>
-            <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
+            <td
+              v-if="isColumnVisible('high')"
+              class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number"
+            >
               {{ formatted(quote.high) }}
             </td>
-            <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
+            <td
+              v-if="isColumnVisible('low')"
+              class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number"
+            >
               {{ formatted(quote.low) }}
             </td>
-            <td class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number">
+            <td
+              v-if="isColumnVisible('previousClose')"
+              class="border-b border-slate-100 px-3 py-3.5 text-right text-xs text-slate-600 tabular-number"
+            >
               {{ formatted(quote.previousClose) }}
             </td>
-            <td class="border-b border-slate-100 px-3 py-3.5 text-right">
+            <td
+              v-if="isColumnVisible('costRange')"
+              class="border-b border-slate-100 px-3 py-3.5 text-right"
+            >
               <ChipCostRangeCell :target="quote" />
             </td>
-            <td class="border-b border-slate-100 px-3 py-3.5">
+            <td
+              v-if="isColumnVisible('status')"
+              class="border-b border-slate-100 px-3 py-3.5"
+            >
               <div
                 class="flex items-center gap-2 text-[11px] font-medium"
                 :class="quote.status === 'TRADING' ? 'text-emerald-700' : 'text-amber-700'"
@@ -461,7 +562,7 @@ function pad(value: number) {
           </tr>
           <tr v-if="displayedQuotes.length === 0">
             <td
-              colspan="11"
+              :colspan="tableColumnCount"
               class="px-5 py-16 text-center text-sm text-slate-400"
             >
               {{ emptyMessage }}

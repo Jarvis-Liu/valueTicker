@@ -24,23 +24,26 @@ import type { WatchGroup } from '~/types/market'
 const props = defineProps<{
   groups: WatchGroup[]
   selectedId: string
+  collapsed: boolean
 }>()
 
 const emit = defineEmits<{
-  select: [id: string]
-  add: []
-  rename: [group: WatchGroup]
-  delete: [group: WatchGroup]
-  settings: []
-  reorder: [groupIds: string[]]
-  export: []
-  import: [file: File]
+  'select': [id: string]
+  'add': []
+  'rename': [group: WatchGroup]
+  'delete': [group: WatchGroup]
+  'settings': []
+  'reorder': [groupIds: string[]]
+  'export': []
+  'import': [file: File]
+  'update:collapsed': [collapsed: boolean]
 }>()
 
 const persistedGroupCount = computed(() => props.groups.filter(group => group.id !== 'all').length)
 const totalSecurityCount = computed(() => props.groups.find(group => group.id === 'all')?.count ?? 0)
 const menuPositions = reactive<Record<string, { top: string, left: string }>>({})
 const importInput = ref<HTMLInputElement>()
+const groupTooltip = ref<{ name: string, count: number, top: string, left: string } | null>(null)
 
 function positionMenu(groupId: string, event: MouseEvent) {
   const button = event.currentTarget as HTMLElement
@@ -69,12 +72,39 @@ function handleImportFile(event: Event) {
   input.value = ''
   if (file) emit('import', file)
 }
+
+function groupInitial(name: string) {
+  return Array.from(name.trim())[0] ?? '组'
+}
+
+function showGroupTooltip(group: WatchGroup, event: MouseEvent | FocusEvent) {
+  if (!props.collapsed) return
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  groupTooltip.value = {
+    name: group.name,
+    count: group.count,
+    top: `${rect.top + rect.height / 2}px`,
+    left: `${rect.right + 10}px`
+  }
+}
+
+function hideGroupTooltip() {
+  groupTooltip.value = null
+}
+
+function toggleCollapsed() {
+  hideGroupTooltip()
+  emit('update:collapsed', !props.collapsed)
+}
 </script>
 
 <template>
   <aside class="surface-card flex min-h-0 flex-col overflow-visible lg:h-full">
-    <div class="flex items-center justify-between border-b border-slate-100 px-4 py-4">
-      <div>
+    <div
+      class="flex items-center justify-between border-b border-slate-100 px-4 py-4"
+      :class="collapsed && 'lg:justify-center lg:px-2'"
+    >
+      <div :class="collapsed && 'lg:hidden'">
         <p class="text-sm font-semibold text-slate-900">
           自选分组
         </p>
@@ -82,7 +112,10 @@ function handleImportFile(event: Event) {
           {{ persistedGroupCount }} 个分组 · {{ totalSecurityCount }} 只证券
         </p>
       </div>
-      <div class="flex items-center gap-1">
+      <div
+        class="flex items-center gap-1"
+        :class="collapsed && 'lg:hidden'"
+      >
         <input
           ref="importInput"
           type="file"
@@ -142,6 +175,21 @@ function handleImportFile(event: Event) {
                 导入分组
               </button>
             </MenuItem>
+            <div class="my-1 h-px bg-slate-100" />
+            <MenuItem v-slot="{ active }">
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-600"
+                :class="active && 'bg-slate-50 text-slate-900'"
+                @click="toggleCollapsed"
+              >
+                <IconChevronRight
+                  :size="15"
+                  class="rotate-180"
+                />
+                收起分组
+              </button>
+            </MenuItem>
           </MenuItems>
         </Menu>
         <button
@@ -155,10 +203,21 @@ function handleImportFile(event: Event) {
           <span>新建</span>
         </button>
       </div>
+      <button
+        v-if="collapsed"
+        type="button"
+        class="hidden h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 lg:grid"
+        aria-label="展开自选分组"
+        title="展开分组"
+        @click="toggleCollapsed"
+      >
+        <IconChevronRight :size="18" />
+      </button>
     </div>
 
     <nav
       class="min-h-0 flex-1 overflow-y-auto p-2.5 lg:space-y-1"
+      :class="collapsed && 'lg:px-2 lg:py-3'"
       aria-label="股票分组"
     >
       <VueDraggable
@@ -177,28 +236,42 @@ function handleImportFile(event: Event) {
           v-for="group in groups"
           :key="group.id"
           class="group relative flex min-w-[11rem] flex-1 items-center gap-2 rounded-xl px-2 py-1.5 transition lg:w-full lg:min-w-0"
-          :class="[group.id === 'all' && 'group-system-view', selectedId === group.id ? 'bg-[#e7f7f1] text-emerald-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900']"
+          :class="[group.id === 'all' && 'group-system-view', collapsed && 'lg:justify-center lg:px-1', selectedId === group.id ? 'bg-[#e7f7f1] text-emerald-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900']"
+          @mouseenter="showGroupTooltip(group, $event)"
+          @mouseleave="hideGroupTooltip"
+          @focusin="showGroupTooltip(group, $event)"
+          @focusout="hideGroupTooltip"
         >
           <button
             type="button"
             class="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-1 text-left"
+            :class="collapsed && 'lg:flex-none lg:justify-center lg:px-0'"
             @click="emit('select', group.id)"
           >
             <span
               class="grid h-8 w-8 shrink-0 place-items-center rounded-lg"
               :class="[group.id !== 'all' && 'group-drag-handle cursor-grab active:cursor-grabbing', selectedId === group.id ? 'bg-white text-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-400 group-hover:text-slate-600']"
-              :title="group.id === 'all' ? undefined : '拖动头像调整分组顺序'"
+              :title="group.id === 'all' || collapsed ? undefined : '拖动头像调整分组顺序'"
             >
               <IconChartDots3
                 v-if="group.id === 'all'"
                 :size="17"
+                :class="collapsed && 'lg:hidden'"
               />
               <IconFolder
                 v-else
                 :size="17"
+                :class="collapsed && 'lg:hidden'"
               />
+              <span
+                class="hidden text-[13px] font-bold leading-none text-current lg:select-none"
+                :class="collapsed && 'lg:block'"
+              >{{ groupInitial(group.name) }}</span>
             </span>
-            <span class="min-w-0 flex-1">
+            <span
+              class="min-w-0 flex-1"
+              :class="collapsed && 'lg:hidden'"
+            >
               <span class="block truncate text-[13px] font-medium">{{ group.name }}</span>
               <span
                 v-if="group.isDefault"
@@ -207,12 +280,12 @@ function handleImportFile(event: Event) {
             </span>
             <span
               class="tabular-number text-xs"
-              :class="selectedId === group.id ? 'text-emerald-700' : 'text-slate-400'"
+              :class="[collapsed && 'lg:hidden', selectedId === group.id ? 'text-emerald-700' : 'text-slate-400']"
             >{{ group.count }}</span>
             <IconChevronRight
               :size="14"
               class="hidden text-emerald-500 lg:block"
-              :class="selectedId === group.id ? 'opacity-100' : 'opacity-0'"
+              :class="[collapsed && 'lg:hidden', selectedId === group.id ? 'opacity-100' : 'opacity-0']"
             />
           </button>
 
@@ -220,6 +293,7 @@ function handleImportFile(event: Event) {
             v-if="group.id !== 'all'"
             as="div"
             class="relative z-30 shrink-0"
+            :class="collapsed && 'lg:hidden'"
           >
             <MenuButton
               class="grid h-8 w-8 place-items-center rounded-lg text-slate-400 opacity-100 transition hover:bg-white hover:text-slate-700 lg:opacity-0 lg:group-hover:opacity-100"
@@ -265,21 +339,30 @@ function handleImportFile(event: Event) {
           <span
             v-else
             class="h-8 w-8 shrink-0"
+            :class="collapsed && 'lg:hidden'"
           />
         </div>
       </VueDraggable>
     </nav>
 
-    <div class="mt-auto hidden border-t border-slate-100 p-3 lg:block">
+    <div
+      class="mt-auto hidden border-t border-slate-100 p-3 lg:block"
+      :class="collapsed && 'lg:px-2'"
+    >
       <button
         type="button"
         class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+        :class="collapsed && 'justify-center px-0'"
+        :title="collapsed ? '监测设置' : undefined"
         @click="emit('settings')"
       >
         <IconSettings :size="17" />
-        监测设置
+        <span :class="collapsed && 'hidden'">监测设置</span>
       </button>
-      <div class="mt-2 flex gap-2 rounded-xl bg-amber-50 px-3 py-3 text-amber-800">
+      <div
+        class="mt-2 flex gap-2 rounded-xl bg-amber-50 px-3 py-3 text-amber-800"
+        :class="collapsed && 'hidden'"
+      >
         <IconInfoCircle
           :size="17"
           class="mt-0.5 shrink-0"
@@ -289,5 +372,26 @@ function handleImportFile(event: Event) {
         </p>
       </div>
     </div>
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition duration-150 ease-out"
+        enter-from-class="translate-x-1 opacity-0"
+        enter-to-class="translate-x-0 opacity-100"
+        leave-active-class="transition duration-100 ease-in"
+        leave-from-class="translate-x-0 opacity-100"
+        leave-to-class="translate-x-1 opacity-0"
+      >
+        <div
+          v-if="groupTooltip"
+          class="pointer-events-none fixed z-[80] hidden -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-2 text-xs font-medium text-white shadow-lg lg:block"
+          :style="{ top: groupTooltip.top, left: groupTooltip.left }"
+          role="tooltip"
+        >
+          {{ groupTooltip.name }}
+          <span class="ml-1 text-slate-400">{{ groupTooltip.count }} 只</span>
+        </div>
+      </Transition>
+    </Teleport>
   </aside>
 </template>
