@@ -1,20 +1,13 @@
 import type { ChipDistributionEntry, ChipDistributionSnapshot, ChipDistributionTarget } from '~/types/chip-distribution'
 import { fetchChipDistribution, isChipDistributionSupported } from '~/services/chips/stock-sdk-chips'
+import { deleteChipCache, readChipCache, writeChipCache } from '~/services/chips/chip-cache.client'
 
-// v4 使用服务端下发的 expiresAt，避免浏览器与 Redis 两层各延长 30 分钟。
-const CACHE_PREFIX = 'value-ticker:chips:v4:'
-const MAX_LOCAL_CACHE_ENTRIES = 40
 const MAX_CONCURRENT_REQUESTS = 3
 const pendingRequests = new Map<string, Promise<ChipDistributionEntry>>()
 const requestWaiters: Array<() => void> = []
 let activeRequestCount = 0
 
 const idleEntry = (): ChipDistributionEntry => ({ status: 'IDLE', snapshot: null, errorMessage: '' })
-
-interface LocalChipCacheEntry {
-  snapshot: ChipDistributionSnapshot
-  lastAccessedAt: string
-}
 
 /**
  * 提供筹码快照的页面状态、同证券请求合并、并发限制和本地 LRU 缓存。
@@ -47,21 +40,29 @@ export function useChipDistribution() {
 
     const current = entries.value[target.securityId]
     if (!force && current?.status === 'READY' && isSnapshotFresh(current.snapshot)) return current
-    if (!force) {
-      const cached = readCache(target.securityId)
-      if (cached) {
-        const ready = { status: 'READY', snapshot: cached, errorMessage: '' } satisfies ChipDistributionEntry
-        entries.value[target.securityId] = ready
-        return ready
-      }
-    }
-
     const pending = pendingRequests.get(target.securityId)
     if (pending) return pending
 
-    const request = runRequest(target).finally(() => pendingRequests.delete(target.securityId))
+    // IndexedDB 读取也是异步操作，必须将读取和回源放入同一个共享 Promise，避免并发穿透。
+    const request = resolveEntry(target, force).finally(() => pendingRequests.delete(target.securityId))
     pendingRequests.set(target.securityId, request)
     return request
+  }
+
+  async function resolveEntry(target: ChipDistributionTarget, force: boolean) {
+    if (!force) {
+      try {
+        const cached = await readChipCache(target.securityId)
+        if (cached) {
+          const ready = { status: 'READY', snapshot: cached, errorMessage: '' } satisfies ChipDistributionEntry
+          entries.value[target.securityId] = ready
+          return ready
+        }
+      } catch {
+        // IndexedDB 不可用时直接回源，页面内状态仍可正常工作。
+      }
+    }
+    return runRequest(target)
   }
 
   /**
@@ -83,7 +84,13 @@ export function useChipDistribution() {
         ? { status: 'READY', snapshot, errorMessage: '' }
         : { status: 'EMPTY', snapshot, errorMessage: '暂无可用筹码数据' }
       entries.value[target.securityId] = entry
-      if (entry.status === 'READY') writeCache(snapshot)
+      if (entry.status === 'READY') {
+        try {
+          await writeChipCache(snapshot)
+        } catch {
+          // IndexedDB 不可用时退化为页面内缓存，不影响数据展示。
+        }
+      }
       return entry
     } catch (error) {
       const entry: ChipDistributionEntry = {
@@ -108,7 +115,22 @@ export function useChipDistribution() {
     await Promise.all(loadedTargets.map(target => ensure(target, true)))
   }
 
-  return { entries, getEntry, ensure, refreshLoaded, isSupported: isChipDistributionSupported }
+  /**
+   * 清除孤立证券的持久化缓存与当前页面快照。
+   * @param securityId 已不属于任何分组的证券 ID。
+   */
+  async function removeCache(securityId: string) {
+    entries.value = Object.fromEntries(
+      Object.entries(entries.value).filter(([entrySecurityId]) => entrySecurityId !== securityId)
+    )
+    try {
+      await deleteChipCache(securityId)
+    } catch {
+      // 缓存清理失败不应回滚已经成功的分组成员删除操作。
+    }
+  }
+
+  return { entries, getEntry, ensure, refreshLoaded, removeCache, isSupported: isChipDistributionSupported }
 }
 
 /**
@@ -134,46 +156,6 @@ function releaseRequestSlot() {
 }
 
 /**
- * 读取基于服务端 expiresAt 的浏览器筹码缓存，并更新 LRU 访问时间。
- * @param securityId 项目证券 ID。
- * @returns 未过期快照；无记录、损坏或过期时返回 null。
- */
-function readCache(securityId: string): ChipDistributionSnapshot | null {
-  if (!import.meta.client) return null
-  try {
-    const raw = localStorage.getItem(`${CACHE_PREFIX}${securityId}`)
-    if (!raw) return null
-    const entry = JSON.parse(raw) as LocalChipCacheEntry
-    const snapshot = entry.snapshot
-    if (!snapshot || !isSnapshotFresh(snapshot) || !Array.isArray(snapshot.points)) {
-      localStorage.removeItem(`${CACHE_PREFIX}${securityId}`)
-      return null
-    }
-    entry.lastAccessedAt = new Date().toISOString()
-    localStorage.setItem(`${CACHE_PREFIX}${securityId}`, JSON.stringify(entry))
-    return snapshot
-  } catch {
-    return null
-  }
-}
-
-/**
- * 保存筹码快照及访问时间，并按最近访问顺序最多保留 40 只证券。
- * @param snapshot 服务端有效期驱动的筹码快照。
- * @returns 无返回值；浏览器存储不可用时静默退化为页面内缓存。
- */
-function writeCache(snapshot: ChipDistributionSnapshot) {
-  if (!import.meta.client) return
-  try {
-    const entry: LocalChipCacheEntry = { snapshot, lastAccessedAt: new Date().toISOString() }
-    localStorage.setItem(`${CACHE_PREFIX}${snapshot.securityId}`, JSON.stringify(entry))
-    pruneLocalCache()
-  } catch {
-    // 浏览器存储不可用时退化为页面内缓存，不影响数据展示。
-  }
-}
-
-/**
  * 判断筹码快照是否仍处于后端原始 expiresAt 之前。
  * @param snapshot 可能为空的筹码快照。
  * @returns 有合法未来过期时间时为 true。
@@ -182,24 +164,4 @@ function isSnapshotFresh(snapshot: ChipDistributionSnapshot | null | undefined) 
   if (!snapshot) return false
   const expiresAt = Date.parse(snapshot.expiresAt)
   return Number.isFinite(expiresAt) && Date.now() < expiresAt
-}
-
-/**
- * 扫描当前版本缓存并删除最久未访问项，防止 localStorage 无限制增长。
- * @returns 无返回值。
- */
-function pruneLocalCache() {
-  const entries: Array<{ key: string, lastAccessedAt: number }> = []
-  for (let index = 0; index < localStorage.length; index += 1) {
-    const key = localStorage.key(index)
-    if (!key?.startsWith(CACHE_PREFIX)) continue
-    try {
-      const item = JSON.parse(localStorage.getItem(key) ?? '') as LocalChipCacheEntry
-      entries.push({ key, lastAccessedAt: Date.parse(item.lastAccessedAt) || 0 })
-    } catch {
-      localStorage.removeItem(key)
-    }
-  }
-  entries.sort((left, right) => right.lastAccessedAt - left.lastAccessedAt)
-  for (const item of entries.slice(MAX_LOCAL_CACHE_ENTRIES)) localStorage.removeItem(item.key)
 }

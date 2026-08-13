@@ -623,6 +623,11 @@ async function removeSecurity() {
     await userConfigStore.deleteMember(groupId, securityId)
     // 以持久化结果为准，确保当前分组列表与其他页面修改保持同步。
     await userConfigStore.loadConfig()
+    const stillInAnyGroup = userConfigStore.stockGroups.some(group =>
+      group.members.some(member => member.securityId === securityId)
+    )
+    // 仅在最后一个分组成员关系被删除后清理公共筹码缓存，避免影响其他分组继续使用。
+    if (!stillInAnyGroup) await chipDistribution.removeCache(securityId)
     showSavedToast('证券已从当前分组移除')
   } catch (error) {
     console.error('[ValueTicker] 移除证券失败', error)

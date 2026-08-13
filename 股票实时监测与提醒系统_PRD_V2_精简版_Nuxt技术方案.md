@@ -569,7 +569,8 @@ interface NormalizedQuote {
 | 结束日期 | 固定远期日期 `20500101` |
 | 业务有效期 | 真实数据成功写入后的 30 分钟 |
 | Redis 物理 TTL | 14 天 |
-| 本地缓存容量 | 最近访问的 40 只证券 |
+| 本地缓存介质 | IndexedDB：`value-ticker-market-cache/chip-snapshots` |
+| 本地缓存容量 | 不设证券数量硬上限，由浏览器站点配额管理 |
 
 ETF、指数和其他当前不支持筹码分布的品种不得发起历史 K 请求。
 
@@ -579,7 +580,7 @@ ETF、指数和其他当前不支持筹码分布的品种不得发起历史 K �
 用户访问筹码成本单元格或筹码趋势
                   │
                   ▼
-      浏览器读取本地筹码缓存（v4）
+      浏览器读取 IndexedDB 筹码缓存
           │                       │
      expiresAt 未到期          无记录或已过期
           │                       │
@@ -746,7 +747,7 @@ Content-Type: application/json
 
 ### 10.6.6 前端缓存与计算职责
 
-浏览器本地缓存条目保存：
+浏览器通过 IndexedDB 数据库 `value-ticker-market-cache` 的 `chip-snapshots` 对象仓库保存本地缓存，`securityId` 为主键，`lastAccessedAt` 为索引：
 
 ```typescript
 interface LocalChipCacheEntry {
@@ -761,7 +762,7 @@ interface LocalChipCacheEntry {
 Date.now() < Date.parse(snapshot.expiresAt)
 ```
 
-前端不得按收到响应的时间重新计算 30 分钟。相同证券的多个组件调用共享同一个 Promise；不同证券最多同时执行三个筹码请求。本地缓存按 `lastAccessedAt` 做 LRU 清理，最多保留 40 只证券。
+前端不得按收到响应的时间重新计算 30 分钟。相同证券的 IndexedDB 读取和网络回源必须共享同一个 Promise；不同证券最多同时执行三个筹码请求。本地缓存不设置证券数量硬上限，由浏览器站点配额管理；证券从最后一个分组移除后，同时清除其 IndexedDB 缓存和页面内快照。IndexedDB 不可用时退化为页面内缓存，不影响筹码展示和服务端共享缓存链路。
 
 网络数据取得后：
 
