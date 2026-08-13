@@ -6,21 +6,32 @@ const REQUEST_TIMEOUT_MS = 10_000
 const DIRECT_BEGIN_LOOKBACK_DAYS = 360
 
 /**
- * 优先从 Nuxt 共享缓存 API 获取东财日 K；服务端失败时浏览器直连并回传校验入库。
+ * 优先从 Nuxt 共享缓存 API 获取东财日 K；服务端失败或返回 STALE 时浏览器直连并回传校验入库。
  * @param secid 东财市场标识与六位证券代码，例如 `0.301217`。
- * @returns 后端统一的缓存结果；两条链路均失败时抛出最终错误。
+ * @returns 后端统一的缓存结果；STALE 恢复失败时保留旧值，服务端无旧值且恢复失败时抛错。
  */
 export async function fetchEastmoneyKlineResult(secid: string): Promise<EastmoneyKlineApiResult> {
+  let serverResult: EastmoneyKlineApiResult
   try {
     const response = await $fetch<ApiResponse<EastmoneyKlineApiResult>>('/api/quotes/kline/eastmoney', {
       query: { secid, klt: '101', fqt: '1' },
       timeout: REQUEST_TIMEOUT_MS
     })
-    if (response.success && response.data) return response.data
-    throw new Error(response.error?.message ?? '历史 K 线服务端请求失败')
+    if (response.success && response.data) serverResult = response.data
+    else throw new Error(response.error?.message ?? '历史 K 线服务端请求失败')
   } catch (serverError) {
     console.warn('[ValueTicker][历史 K 线服务端降级]', secid, getErrorMessage(serverError))
     return recoverEastmoneyKlineFromBrowser(secid)
+  }
+
+  if (!serverResult.stale && serverResult.cacheStatus !== 'STALE') return serverResult
+
+  console.warn('[ValueTicker][历史 K 线旧值恢复]', secid, serverResult.warning ?? '共享缓存已过业务有效期，尝试浏览器直连更新')
+  try {
+    return await recoverEastmoneyKlineFromBrowser(secid)
+  } catch (recoveryError) {
+    console.warn('[ValueTicker][历史 K 线直连恢复失败]', secid, getErrorMessage(recoveryError))
+    return serverResult
   }
 }
 
