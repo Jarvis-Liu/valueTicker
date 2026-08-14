@@ -49,7 +49,18 @@ function renderChart() {
       triggerOn: 'mousemove|click',
       confine: true,
       enterable: true,
-      axisPointer: { type: 'cross' },
+      backgroundColor: 'rgba(255, 255, 255, 0.92)',
+      borderColor: '#f1f5f9',
+      borderWidth: 1,
+      padding: [8, 10],
+      textStyle: { color: '#64748b', fontSize: 11 },
+      transitionDuration: 0.15,
+      extraCssText: 'border-radius:8px;box-shadow:0 1px 2px rgba(15,23,42,0.06);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);',
+      axisPointer: {
+        type: 'cross',
+        lineStyle: { color: '#94a3b8', width: 1, type: 'dashed' },
+        crossStyle: { color: '#94a3b8', width: 1, type: 'dashed' }
+      },
       formatter: formatChartTooltip
     },
     legend: {
@@ -213,7 +224,7 @@ function formatChartTooltip(input: unknown) {
     .filter(param => !param.data?.signals && isTrendSeries(param.seriesName))
     .map((param) => {
       const suffix = param.seriesName?.includes('（%）') ? '%' : ' 元'
-      return `<div style="display:flex;justify-content:space-between;gap:20px"><span>${param.marker ?? ''}${escapeHtml(param.seriesName ?? '')}</span><strong>${formatTooltipValue(param.value, suffix)}</strong></div>`
+      return `<div style="display:flex;justify-content:space-between;gap:16px"><span>${param.marker ?? ''}${escapeHtml(param.seriesName ?? '')}</span><strong style="color:#334155">${formatTooltipValue(param.value, suffix)}</strong></div>`
     })
   const signals = params.flatMap(param => param.data?.signals ?? [])
   const signalRows = signals.map((signal) => {
@@ -223,7 +234,7 @@ function formatChartTooltip(input: unknown) {
   })
 
   return [
-    `<div style="min-width:180px"><div style="margin-bottom:6px;font-weight:600;color:#334155">${escapeHtml(date)}</div>`,
+    `<div style="min-width:164px;line-height:1.55"><div style="margin-bottom:5px;font-size:10px;color:#94a3b8">${escapeHtml(date)}</div>`,
     ...valueRows,
     signalRows.length ? '<div style="margin-top:7px;padding-top:5px;border-top:1px solid #e2e8f0;color:#475569">技术信号</div>' : '',
     ...signalRows,
