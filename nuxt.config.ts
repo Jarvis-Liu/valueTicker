@@ -15,6 +15,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     // Cloudflare 行情代理根地址，仅供 Nitro 正式行情 API 与测试接口读取，不暴露给客户端。
     cloudflareWorkerUrl: process.env.CLOUDFLARE_WORKER_URL ?? '',
+    // Supabase Cron 调用成交额采集接口时使用的服务端私有 Bearer 密钥。
+    marketTurnoverCronSecret: process.env.MARKET_TURNOVER_CRON_SECRET ?? '',
     public: {
       // 迁移观察期回滚开关；仅暴露布尔值，不包含任何上游凭据。
       serverKlineCacheEnabled: process.env.SERVER_KLINE_CACHE_ENABLED !== 'false'

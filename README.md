@@ -49,6 +49,7 @@ pnpm install
 ```bash
 UPSTASH_REDIS_REST_URL=https://your-database.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your-token
+MARKET_TURNOVER_CRON_SECRET=replace-with-a-random-secret
 ```
 
 也兼容 Vercel KV 的 `KV_REST_API_URL`、`KV_REST_API_TOKEN`，以及 Vercel Marketplace 注入的同前缀变量。
@@ -78,6 +79,24 @@ pnpm preview    # 本地预览生产构建
 - `15:00` 后：可申请更新收盘快照；`15:30` 后首笔有效请求封存该快照。
 - 快照按 `交易日 + MIDDAY/CLOSE` 独立保存；封存后重复请求只返回既有数据。
 - 页面展示总额使用万亿单位；与昨日同阶段的差额按亿/万亿自适应显示。
+
+为避免没有在线用户时缺少快照，生产环境可使用 Supabase Cron 请求受密钥保护的
+`POST /api/internal/market-turnover/capture`。该接口会在服务端低频请求腾讯成交额，校验三家交易所的行情日期和时间后，复用上述 Redis 封存规则；页面进入和手动刷新仍作为兜底。
+
+在 Vercel 和本地环境中配置同一个 `MARKET_TURNOVER_CRON_SECRET`，并在 Supabase Vault 保存该密钥。Cron 请求必须携带：
+
+```http
+Authorization: Bearer <MARKET_TURNOVER_CRON_SECRET>
+```
+
+Supabase Cron 使用 UTC，建议配置以下工作日任务。重复调用是幂等重试，首次成功封存后不会覆盖快照：
+
+| 用途 | 北京时间 | Cron 表达式 |
+| --- | --- | --- |
+| 午盘采集与重试 | 12:05、12:15、12:25 | `5,15,25 4 * * 1-5` |
+| 收盘采集与重试 | 15:35、15:45、15:55 | `35,45,55 7 * * 1-5` |
+
+定时接口仅接受当前服务端时段对应的数据。腾讯返回时间不属于当天，或者午盘/收盘时间尚未到达时，接口会拒绝写入，因此周中休市日不会封存上一交易日的旧行情。
 
 ## 数据源说明
 

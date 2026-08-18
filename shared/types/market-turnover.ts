@@ -6,6 +6,17 @@ export interface ExchangeTurnoverAmounts {
   bse: number
 }
 
+export type ExchangeTurnoverSourceTimes = Record<keyof ExchangeTurnoverAmounts, string | null>
+
+/** 腾讯三市成交额实时响应的统一解析结果。 */
+export interface TencentMarketTurnover {
+  exchanges: ExchangeTurnoverAmounts
+  /** 三条行情中最晚的供应商时间，ISO 格式；解析不到时为 null。 */
+  sourceUpdatedAt: string | null
+  /** 各交易所独立的供应商时间，供定时采集时校验数据完整性。 */
+  sourceUpdatedAtByExchange: ExchangeTurnoverSourceTimes
+}
+
 /** 后端保存的一个确定性时段成交额快照。金额统一为元。 */
 export interface MarketTurnoverSnapshot {
   tradeDate: string
