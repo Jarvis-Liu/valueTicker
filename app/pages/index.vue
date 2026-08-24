@@ -22,7 +22,6 @@ import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
 import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 import { fetchMarketTurnoverSnapshots, requestMarketTurnoverSnapshotUpdate } from '~/services/api/market-turnover'
-import { fetchTencentIntradayFromProxy } from '~/services/api/tencent-intraday'
 import { fetchTencentMarketTurnover } from '~/services/market-turnover/tencent-market-turnover'
 import { getClientMarketTurnoverPhase, getPreviousWeekdayTradeDate, sumMarketTurnover, type MarketTurnoverDisplay } from '~/utils/market-turnover'
 import type { MarketTurnoverSnapshot } from '~~/shared/types/market-turnover'
@@ -37,19 +36,6 @@ const supabase = useSupabaseClient()
 const supabaseUser = useSupabaseUser()
 let monitorStarted = false
 let lastReportedWindowActive: boolean | null = null
-// 页面直连测试已确认可用，恢复 Worker 行情轮询。
-const enableQuoteWorker = true
-
-const quotes: SecurityQuote[] = [
-  { securityId: 'SSE:600519', name: '贵州茅台', code: '600519', securityType: 'STOCK', price: 1496.80, change: 18.32, changePercent: 1.24, open: 1481.00, high: 1502.88, low: 1478.20, previousClose: 1478.48, updatedAt: '10:26:35', status: 'TRADING', alertCount: 2, groupIds: ['default', 'core'] },
-  { securityId: 'SZSE:000858', name: '五粮液', code: '000858', securityType: 'STOCK', price: 128.64, change: -1.12, changePercent: -0.86, open: 129.80, high: 130.12, low: 128.20, previousClose: 129.76, updatedAt: '10:26:35', status: 'TRADING', alertCount: 1, groupIds: ['core'] },
-  { securityId: 'SZSE:300750', name: '宁德时代', code: '300750', boardLabel: '创', securityType: 'STOCK', price: 268.15, change: 4.72, changePercent: 1.79, open: 264.20, high: 270.06, low: 263.58, previousClose: 263.43, updatedAt: '10:26:35', status: 'TRADING', alertCount: 0, groupIds: ['default', 'core', 'tech'] },
-  { securityId: 'SSE:688981', name: '中芯国际', code: '688981', boardLabel: '科', securityType: 'STOCK', price: 92.36, change: 2.18, changePercent: 2.42, open: 90.60, high: 93.12, low: 89.88, previousClose: 90.18, updatedAt: '10:26:34', status: 'TRADING', alertCount: 2, groupIds: ['default', 'tech'] },
-  { securityId: 'SSE:601318', name: '中国平安', code: '601318', securityType: 'STOCK', price: 52.18, change: -0.23, changePercent: -0.44, open: 52.46, high: 52.62, low: 52.02, previousClose: 52.41, updatedAt: '10:26:35', status: 'TRADING', alertCount: 0, groupIds: ['core'] },
-  { securityId: 'SZSE:002594', name: '比亚迪', code: '002594', securityType: 'STOCK', price: 318.72, change: 1.44, changePercent: 0.45, open: 317.50, high: 320.16, low: 315.60, previousClose: 317.28, updatedAt: '10:26:33', status: 'STALE', alertCount: 1, groupIds: ['tech'] },
-  { securityId: 'SZSE:159915', name: '创业板 ETF', code: '159915', securityType: 'ETF', price: 2.184, change: -0.006, changePercent: -0.27, open: 2.192, high: 2.201, low: 2.178, previousClose: 2.190, updatedAt: '10:26:35', status: 'TRADING', alertCount: 0, groupIds: ['etf'] },
-  { securityId: 'SSE:510300', name: '沪深300 ETF', code: '510300', securityType: 'ETF', price: 4.126, change: 0.018, changePercent: 0.44, open: 4.110, high: 4.132, low: 4.105, previousClose: 4.108, updatedAt: '10:26:35', status: 'TRADING', alertCount: 1, groupIds: ['etf'] }
-]
 
 const selectedGroupId = ref('all')
 const groupSidebarCollapsed = useLocalStorage<boolean>('value-ticker:group-sidebar-collapsed', false)
@@ -109,7 +95,6 @@ const configuredQuotes = computed<SecurityQuote[]>(() => {
     : persistedGroups.find(group => group.id === selectedGroupId.value)?.members ?? []
 
   return members.map((member) => {
-    const existingQuote = quotes.find(quote => quote.securityId === member.securityId)
     const groupIds = persistedGroups
       .filter(group => group.members.some(item => item.securityId === member.securityId))
       .map(group => group.id)
@@ -118,7 +103,7 @@ const configuredQuotes = computed<SecurityQuote[]>(() => {
     const pendingQuote = createPendingQuote(member, groupIds, alertCount)
     const liveQuote = marketStore.quotes[member.securityId]
     if (liveQuote) return { ...pendingQuote, ...liveQuote, status: liveQuote.status === 'ERROR' ? 'STALE' : liveQuote.status, name: member.name, code: member.code, securityType: member.securityType === 'ETF' ? 'ETF' : 'STOCK', boardLabel: member.boardLabel || undefined, groupIds, alertCount }
-    return existingQuote ? { ...existingQuote, groupIds, alertCount } : pendingQuote
+    return pendingQuote
   })
 })
 const visibleQuotes = computed(() => {
@@ -150,13 +135,11 @@ onMounted(async () => {
         await userConfigStore.loadConfig()
         // 页面进入只请求一次腾讯成交额；它不加入 5 秒行情轮询。
         void refreshMarketTurnover()
-        if (enableQuoteWorker) {
-          quoteMonitor.start(subscriptionSecurities.value, quoteProviderMode.value, activeAlerts.value, pollingIntervalMs.value)
-          monitorStarted = true
-          lastReportedWindowActive = isWindowActive()
-          quoteMonitor.updateWindowActivity(lastReportedWindowActive)
-          quoteMonitor.updateTrendSecurities(trendSecurities.value)
-        }
+        quoteMonitor.start(subscriptionSecurities.value, quoteProviderMode.value, activeAlerts.value, pollingIntervalMs.value)
+        monitorStarted = true
+        lastReportedWindowActive = isWindowActive()
+        quoteMonitor.updateWindowActivity(lastReportedWindowActive)
+        quoteMonitor.updateTrendSecurities(trendSecurities.value)
         fundFlowRanks.start(rankStockCodes.value)
         fundFlowRanks.setWindowActive(isWindowActive())
         return
@@ -293,15 +276,6 @@ function openIntradayTrend(target: IntradayTrendTarget) {
   intradayTrendDialogOpen.value = true
 }
 
-/** 点击左上角 Logo 调用腾讯分时正式 API；结果只输出到控制台，不进入行情状态。 */
-function testMinuteKlineProxy() {
-  void fetchTencentIntradayFromProxy('sz300620')
-    .then((result) => {
-      console.log('[ValueTicker][腾讯分时正式接口测试]', result)
-    })
-    .catch(error => console.error('[ValueTicker][腾讯分时正式接口测试] 请求失败', error))
-}
-
 function openMarketIndexTrend(securityId: string) {
   const security = MARKET_INDEX_SECURITIES.find(item => item.securityId === securityId)
   if (!security) return
@@ -387,7 +361,7 @@ async function signOut() {
     signingOut.value = false
   }
 }
-async function requestClearAlertNotifications() {
+function requestClearAlertNotifications() {
   if (marketStore.alertNotifications.length > 0) clearAlertNotificationsConfirmOpen.value = true
 }
 
@@ -677,7 +651,6 @@ function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount
         @refresh="refresh"
         @settings="monitorSettingsOpen = true"
         @notifications="alertNotificationsOpen = true"
-        @logo-click="testMinuteKlineProxy"
         @sign-out="signOut"
       />
       <div class="border-b border-slate-200/70 bg-[#f3f6f4]/95 shadow-sm backdrop-blur">
