@@ -21,6 +21,7 @@ let suppressNextAlerts = false
 let trendRefreshInFlight = false
 let trendRefreshPending = false
 let trendRefreshPendingForce = false
+const trendRefreshWaiters: Array<() => void> = []
 let trendRequestVersion = 0
 let lastTrendRefreshedAt = 0
 let providerMode: QuoteProviderMode = 'MIXED'
@@ -125,10 +126,15 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
   }
 
   if (message.type === 'FORCE_REFRESH') {
-    await refreshQuotes()
-    await refreshTrends(true)
-    scheduleQuotes()
-    scheduleTrends()
+    try {
+      await refreshQuotes()
+      await refreshTrends(true)
+    } finally {
+      scheduleQuotes()
+      scheduleTrends()
+      // 手动刷新由 requestId 确认完成，页面 Loading 不再依赖固定时长猜测。
+      post({ type: 'REFRESH_COMPLETED', requestId: message.requestId })
+    }
   }
 }
 
@@ -171,6 +177,7 @@ async function refreshTrends(force = false) {
     // 不丢弃请求期间到达的新分组/Provider 任务；当前请求结束后只补发一次最新快照。
     trendRefreshPending = true
     trendRefreshPendingForce ||= force
+    await new Promise<void>(resolve => trendRefreshWaiters.push(resolve))
     return
   }
 
@@ -189,7 +196,9 @@ async function refreshTrends(force = false) {
       const pendingForce = trendRefreshPendingForce
       trendRefreshPending = false
       trendRefreshPendingForce = false
-      void refreshTrends(pendingForce)
+      await refreshTrends(pendingForce)
+    } else {
+      for (const resolve of trendRefreshWaiters.splice(0)) resolve()
     }
   }
 }

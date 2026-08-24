@@ -114,7 +114,8 @@ const visibleQuotes = computed(() => {
     return matches && (!onlyAlerted.value || quote.alertCount > 0)
   })
 })
-const lastUpdatedAt = computed(() => visibleQuotes.value[0]?.updatedAt ?? '待更新')
+// Header 与交易日历使用全局行情批次时间，不受搜索、筛选和当前分组顺序影响。
+const lastUpdatedAt = computed(() => marketStore.lastUpdatedAt ?? '待更新')
 const healthyQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'TRADING' && Number.isFinite(quote.price)).length)
 const delayedQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'STALE' || !Number.isFinite(quote.price)).length)
 const quoteHealthPercent = computed(() => configuredQuotes.value.length ? healthyQuoteCount.value / configuredQuotes.value.length * 100 : null)
@@ -288,20 +289,23 @@ function openMarketIndexTrend(securityId: string) {
   })
 }
 
-function refresh() {
+async function refresh() {
   if (refreshing.value) return
   refreshing.value = true
   contentLoading.value = true
-  quoteMonitor.forceRefresh()
-  // 筹码数据是日线级低频数据；手动刷新时只更新当前表格里已经加载过的证券。
-  void chipDistribution.refreshLoaded(visibleQuotes.value)
-  // 成交额按产品约定仅在页面进入与用户手动刷新时请求。
-  void refreshMarketTurnover()
-  void fundFlowRanks.refresh()
-  window.setTimeout(() => {
+  try {
+    await Promise.allSettled([
+      quoteMonitor.forceRefresh(),
+      // 筹码数据是日线级低频数据；手动刷新时只更新当前表格里已经加载过的证券。
+      chipDistribution.refreshLoaded(visibleQuotes.value),
+      // 成交额按产品约定仅在页面进入与用户手动刷新时请求。
+      refreshMarketTurnover(),
+      fundFlowRanks.refresh()
+    ])
+  } finally {
     refreshing.value = false
     contentLoading.value = false
-  }, 700)
+  }
 }
 
 /**
@@ -380,7 +384,6 @@ async function saveAlertRules(rules: AlertRule[]) {
       await browserNotifications.requestPermission()
     }
     await userConfigStore.saveSecurityAlerts(activeQuote.value.securityId, rules)
-    quoteMonitor.updateAlerts(activeAlerts.value)
     alertOpen.value = false
     showSavedToast(rules.length > 0 ? '提醒规则已保存' : '提醒规则已清空')
   } catch (error) {
