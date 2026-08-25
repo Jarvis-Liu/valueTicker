@@ -32,7 +32,10 @@ const supabase = useSupabaseClient()
 const supabaseUser = useSupabaseUser()
 
 const selectedGroupId = ref('all')
-const groupSidebarCollapsed = useLocalStorage<boolean>('value-ticker:group-sidebar-collapsed', false)
+// 延迟到客户端挂载后读取，确保 SSR 水合期间父级网格与 GroupSidebar 使用同一个初始状态。
+const groupSidebarCollapsed = useLocalStorage<boolean>('value-ticker:group-sidebar-collapsed', false, {
+  initOnMounted: true
+})
 const signingOut = ref(false)
 const alertOpen = ref(false)
 const intradayTrendDialogOpen = ref(false)
