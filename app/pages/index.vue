@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { IconCircleCheck } from '@tabler/icons-vue'
+import { useDashboardQuoteView } from '~/composables/dashboard/useDashboardQuoteView'
+import { useDashboardMonitoring, type DashboardMonitorSettings } from '~/composables/dashboard/useDashboardMonitoring'
+import { useMarketTurnover } from '~/composables/dashboard/useMarketTurnover'
+import { useGroupManagement } from '~/composables/dashboard/groups/useGroupManagement'
 import AlertNotificationsDialog from '~/components/alerts/AlertNotificationsDialog.vue'
 import AlertRuleDrawer from '~/components/alerts/AlertRuleDrawer.vue'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
@@ -16,40 +20,20 @@ import TradingCalendarBar from '~/components/market/TradingCalendarBar.vue'
 import QuoteHealthCards from '~/components/quotes/QuoteHealthCards.vue'
 import QuoteMonitorPanel from '~/components/quotes/QuoteMonitorPanel.vue'
 import IntradayTrendDialog from '~/components/quotes/IntradayTrendDialog.vue'
-import type { IntradayTrendTarget, SecurityQuote, WatchGroup } from '~/types/market'
-import type { NormalizedQuote, QuoteProviderMode } from '~/services/quotes/types'
-import type { AlertRule, SecurityItem, StockGroupsExportFile } from '~~/shared/types/stock'
-import { stockGroupsExportFileSchema } from '~~/shared/schemas/stock-config'
-import { getGroupSecurities, getPollingSecurities } from '~/utils/polling-securities'
+import type { IntradayTrendTarget, SecurityQuote } from '~/types/market'
+import type { AlertRule } from '~~/shared/types/stock'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
-import { fetchMarketTurnoverSnapshots, requestMarketTurnoverSnapshotUpdate } from '~/services/api/market-turnover'
-import { fetchTencentMarketTurnover } from '~/services/market-turnover/tencent-market-turnover'
-import { getClientMarketTurnoverPhase, getPreviousWeekdayTradeDate, sumMarketTurnover, type MarketTurnoverDisplay } from '~/utils/market-turnover'
-import type { MarketTurnoverSnapshot } from '~~/shared/types/market-turnover'
 
 const userConfigStore = useUserConfigStore()
 const marketStore = useMarketStore()
-const quoteMonitor = useQuoteMonitor()
 const browserNotifications = useBrowserNotifications()
 const chipDistribution = useChipDistribution()
-const fundFlowRanks = useFundFlowRanks()
 const supabase = useSupabaseClient()
 const supabaseUser = useSupabaseUser()
-let monitorStarted = false
-let lastReportedWindowActive: boolean | null = null
 
 const selectedGroupId = ref('all')
 const groupSidebarCollapsed = useLocalStorage<boolean>('value-ticker:group-sidebar-collapsed', false)
-const quoteProviderMode = useLocalStorage<QuoteProviderMode>('value-ticker:provider-mode', 'MIXED')
-const pollingIntervalMs = useLocalStorage<number>('value-ticker:polling-interval-ms', 5000)
-const search = ref('')
-// 仅影响当前表格显示；完整证券集仍参与行情订阅和提醒判断。
-const onlyAlerted = ref(false)
-const paused = ref(false)
-const refreshing = ref(false)
 const signingOut = ref(false)
-// 只用于首次配置加载与用户手动刷新；自动轮询不会遮挡主体内容。
-const contentLoading = ref(true)
 const alertOpen = ref(false)
 const intradayTrendDialogOpen = ref(false)
 const activeTrendTarget = ref<IntradayTrendTarget | null>(null)
@@ -58,77 +42,114 @@ const clearAlertNotificationsConfirmOpen = ref(false)
 const activeQuote = ref<SecurityQuote | null>(null)
 const savedToast = ref(false)
 const toastMessage = ref('操作已完成')
-const groupFormOpen = ref(false)
 const monitorSettingsOpen = ref(false)
-const groupFormMode = ref<'create' | 'rename'>('create')
-const activeGroup = ref<WatchGroup | null>(null)
-const deleteConfirmOpen = ref(false)
-const addSecurityOpen = ref(false)
-const removeSecurityConfirmOpen = ref(false)
-const removingSecurity = ref(false)
-const activeSecurity = ref<SecurityQuote | null>(null)
-const transferDialogOpen = ref(false)
-const transferMode = ref<'MOVE' | 'COPY'>('MOVE')
-const importedGroupsFile = ref<StockGroupsExportFile | null>(null)
-const importGroupsConfirmOpen = ref(false)
-const marketTurnover = ref<MarketTurnoverDisplay | null>(null)
+
+const {
+  search,
+  onlyAlerted,
+  configuredQuotes,
+  visibleQuotes,
+  lastUpdatedAt,
+  delayedQuoteCount,
+  quoteHealthPercent,
+  enabledAlertCount,
+  coveredAlertSecurityCount,
+  subscriptionSecurities,
+  trendSecurities,
+  rankStockCodes,
+  marketIndexQuotes
+} = useDashboardQuoteView(selectedGroupId)
 
 const userEmail = computed(() => {
   const email = (supabaseUser.value as { email?: unknown } | null)?.email
   return typeof email === 'string' ? email : ''
 })
-const groups = computed(() => userConfigStore.watchGroups)
-const selectedGroup = computed(() => groups.value.find(group => group.id === selectedGroupId.value) ?? groups.value[0]!)
-const addTargetGroup = computed(() => selectedGroupId.value === 'all'
-  ? groups.value.find(group => group.isDefault) ?? groups.value[0]
-  : selectedGroup.value)
-const addTargetSecurityIds = computed(() => {
-  const group = userConfigStore.stockGroups.find(group => group.id === addTargetGroup.value?.id)
-  return group?.members.map(member => member.securityId) ?? []
-})
-const editableGroupNames = computed(() => groups.value
-  .filter(group => group.id !== 'all' && group.id !== activeGroup.value?.id)
-  .map(group => group.name))
-const configuredQuotes = computed<SecurityQuote[]>(() => {
-  const persistedGroups = userConfigStore.stockGroups
-  const members = selectedGroupId.value === 'all'
-    ? Array.from(new Map(persistedGroups.flatMap(group => group.members).map(member => [member.securityId, member])).values())
-    : persistedGroups.find(group => group.id === selectedGroupId.value)?.members ?? []
-
-  return members.map((member) => {
-    const groupIds = persistedGroups
-      .filter(group => group.members.some(item => item.securityId === member.securityId))
-      .map(group => group.id)
-    const alertCount = userConfigStore.config?.alerts[member.securityId]?.rules.filter(rule => rule.enabled).length ?? 0
-
-    const pendingQuote = createPendingQuote(member, groupIds, alertCount)
-    const liveQuote = marketStore.quotes[member.securityId]
-    if (liveQuote) return { ...pendingQuote, ...liveQuote, status: liveQuote.status === 'ERROR' ? 'STALE' : liveQuote.status, name: member.name, code: member.code, securityType: member.securityType === 'ETF' ? 'ETF' : 'STOCK', boardLabel: member.boardLabel || undefined, groupIds, alertCount }
-    return pendingQuote
-  })
-})
-const visibleQuotes = computed(() => {
-  const keyword = search.value.trim().toLowerCase()
-  return configuredQuotes.value.filter((quote) => {
-    const matches = !keyword || quote.name.toLowerCase().includes(keyword) || quote.code.includes(keyword)
-    return matches && (!onlyAlerted.value || quote.alertCount > 0)
-  })
-})
-// Header 与交易日历使用全局行情批次时间，不受搜索、筛选和当前分组顺序影响。
-const lastUpdatedAt = computed(() => marketStore.lastUpdatedAt ?? '待更新')
-const healthyQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'TRADING' && Number.isFinite(quote.price)).length)
-const delayedQuoteCount = computed(() => configuredQuotes.value.filter(quote => quote.status === 'STALE' || !Number.isFinite(quote.price)).length)
-const quoteHealthPercent = computed(() => configuredQuotes.value.length ? healthyQuoteCount.value / configuredQuotes.value.length * 100 : null)
-const enabledAlertCount = computed(() => configuredQuotes.value.reduce((total, quote) => total + quote.alertCount, 0))
-const coveredAlertSecurityCount = computed(() => configuredQuotes.value.filter(quote => quote.alertCount > 0).length)
 const activeTrend = computed(() => activeTrendTarget.value ? marketStore.intradayTrends[activeTrendTarget.value.securityId] : undefined)
 const activeAlertRules = computed(() => activeQuote.value ? userConfigStore.config?.alerts[activeQuote.value.securityId]?.rules ?? [] : [])
 const activeAlerts = computed(() => userConfigStore.config?.alerts ?? {})
-const marketIndexQuotes = computed<NormalizedQuote[]>(() =>
-  MARKET_INDEX_SECURITIES
-    .map(index => marketStore.quotes[index.securityId])
-    .filter((quote): quote is NormalizedQuote => Boolean(quote))
-)
+
+const {
+  marketTurnover,
+  refreshMarketTurnover
+} = useMarketTurnover()
+
+const {
+  quoteProviderMode,
+  pollingIntervalMs,
+  paused,
+  refreshing,
+  contentLoading,
+  fundFlowRanks,
+  startMonitoring,
+  stopMonitoring,
+  completeInitialLoading,
+  refreshGroupSecurities,
+  changeQuoteProvider,
+  saveMonitoringSettings,
+  toggleMonitor,
+  refresh
+} = useDashboardMonitoring({
+  subscriptionSecurities,
+  trendSecurities,
+  rankStockCodes,
+  activeAlerts,
+  visibleQuotes,
+  refreshAdditionalData: quotes => [
+    // 筹码数据是日线级低频数据；手动刷新时只更新当前表格里已经加载过的证券。
+    chipDistribution.refreshLoaded(quotes),
+    // 成交额按产品约定仅在页面进入与用户手动刷新时请求。
+    refreshMarketTurnover()
+  ]
+})
+
+const {
+  groups,
+  activeSecurity,
+  groupFormOpen,
+  groupFormMode,
+  activeGroup,
+  deleteConfirmOpen,
+  addSecurityOpen,
+  removeSecurityConfirmOpen,
+  removingSecurity,
+  selectedGroup,
+  addTargetGroup,
+  addTargetSecurityIds,
+  editableGroupNames,
+  selectGroup,
+  reorderGroups,
+  reorderGroupMembers,
+  openGroupForm,
+  closeGroupForm,
+  openRenameGroupForm,
+  submitGroupForm,
+  openDeleteGroupConfirm,
+  closeDeleteGroupConfirm,
+  deleteGroup,
+  openAddSecurity,
+  addSecurity,
+  openRemoveSecurityConfirm,
+  closeRemoveSecurityConfirm,
+  removeSecurity,
+  transferDialogOpen,
+  transferMode,
+  transferGroups,
+  openTransferDialog,
+  closeTransferDialog,
+  transferSecurity,
+  importedGroupsFile,
+  importGroupsConfirmOpen,
+  exportGroups,
+  prepareGroupImport,
+  closeGroupImportConfirm,
+  importGroups,
+  formatImportedAt
+} = useGroupManagement({
+  selectedGroupId,
+  refreshGroupSecurities,
+  removeChipCache: chipDistribution.removeCache,
+  notify: showSavedToast
+})
 
 onMounted(async () => {
   try {
@@ -137,13 +158,7 @@ onMounted(async () => {
         await userConfigStore.loadConfig()
         // 页面进入只请求一次腾讯成交额；它不加入 5 秒行情轮询。
         void refreshMarketTurnover()
-        quoteMonitor.start(subscriptionSecurities.value, quoteProviderMode.value, activeAlerts.value, pollingIntervalMs.value)
-        monitorStarted = true
-        lastReportedWindowActive = isWindowActive()
-        quoteMonitor.updateWindowActivity(lastReportedWindowActive)
-        quoteMonitor.updateTrendSecurities(trendSecurities.value)
-        fundFlowRanks.start(rankStockCodes.value)
-        fundFlowRanks.setWindowActive(isWindowActive())
+        startMonitoring()
         return
       } catch {
         if (attempt < 2) {
@@ -156,113 +171,12 @@ onMounted(async () => {
       }
     }
   } finally {
-    contentLoading.value = false
+    completeInitialLoading()
   }
 })
 
-const subscriptionSecurities = computed<SecurityItem[]>(() => getPollingSecurities(userConfigStore.stockGroups, MARKET_INDEX_SECURITIES))
-const trendSecurities = computed<SecurityItem[]>(() => getGroupSecurities(userConfigStore.stockGroups, selectedGroupId.value, MARKET_INDEX_SECURITIES))
-const rankStockCodes = computed(() => subscriptionSecurities.value
-  .filter(security => security.securityType === 'STOCK' && ['SSE:', 'SZSE:', 'BSE:'].some(prefix => security.securityId.startsWith(prefix)))
-  .map(security => security.code))
-
-watch(subscriptionSecurities, (nextSecurities) => {
-  if (!monitorStarted) return
-  quoteMonitor.updateSecurities(nextSecurities, quoteProviderMode.value)
-}, { deep: true })
-
-watch(rankStockCodes, nextCodes => fundFlowRanks.updateCodes(nextCodes), { deep: true })
-
-watch(trendSecurities, (nextSecurities) => {
-  if (!monitorStarted) return
-  quoteMonitor.updateTrendSecurities(nextSecurities)
-}, { deep: true })
-
-watch(activeAlerts, (nextAlerts) => {
-  if (!monitorStarted) return
-  quoteMonitor.updateAlerts(nextAlerts)
-}, { deep: true })
-
-onMounted(() => {
-  window.addEventListener('focus', syncWindowActivity)
-  window.addEventListener('blur', syncWindowActivity)
-  document.addEventListener('visibilitychange', syncWindowActivity)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('focus', syncWindowActivity)
-  window.removeEventListener('blur', syncWindowActivity)
-  document.removeEventListener('visibilitychange', syncWindowActivity)
-  quoteMonitor.stop()
-  fundFlowRanks.stop()
-})
-
-watch(groups, (nextGroups) => {
-  const selectedGroupExists = nextGroups.some(group => group.id === selectedGroupId.value)
-
-  if (!selectedGroupExists) {
-    selectedGroupId.value = 'all'
-  }
-})
-
-function selectGroup(groupId: string) {
-  if (selectedGroupId.value === groupId) return
-  selectedGroupId.value = groupId
-  // 切换视图时仅主动拉取当前分组行情；趋势由 trendSecurities watcher 统一刷新，避免重复请求竞态。
-  if (monitorStarted) quoteMonitor.refreshSecurities(getGroupSecurities(userConfigStore.stockGroups, groupId))
-}
-
-async function reorderGroups(groupIds: string[]) {
-  try {
-    await userConfigStore.reorderGroups(groupIds)
-    showSavedToast('分组顺序已保存')
-  } catch (error) {
-    console.error('[ValueTicker] 调整分组顺序失败', error)
-    showSavedToast(userConfigStore.errorMessage || '分组排序保存失败')
-  }
-}
-async function reorderGroupMembers(securityIds: string[]) {
-  if (selectedGroupId.value === 'all') return
-
-  try {
-    await userConfigStore.reorderGroupMembers(selectedGroupId.value, securityIds)
-    showSavedToast('证券顺序已保存')
-  } catch (error) {
-    console.error('[ValueTicker] 调整证券顺序失败', error)
-    showSavedToast(userConfigStore.errorMessage || '证券排序保存失败')
-  }
-}
-function isWindowActive() {
-  return document.visibilityState === 'visible' && document.hasFocus()
-}
-
-function syncWindowActivity() {
-  const active = isWindowActive()
-  fundFlowRanks.setWindowActive(active)
-  if (!monitorStarted || active === lastReportedWindowActive) return
-
-  lastReportedWindowActive = active
-  quoteMonitor.updateWindowActivity(active)
-}
-
-function changeQuoteProvider(providerMode: QuoteProviderMode) {
-  if (quoteProviderMode.value === providerMode) return
-  quoteProviderMode.value = providerMode
-  marketStore.setStatus('RUNNING')
-  if (monitorStarted) quoteMonitor.updateProviderMode(providerMode)
-}
-
-function saveMonitorSettings(settings: { provider: QuoteProviderMode, pollingIntervalMs: number }) {
-  const providerChanged = quoteProviderMode.value !== settings.provider
-  quoteProviderMode.value = settings.provider
-  pollingIntervalMs.value = settings.pollingIntervalMs
-  marketStore.setStatus('RUNNING')
-
-  if (monitorStarted) {
-    if (providerChanged) quoteMonitor.updateProviderMode(settings.provider)
-    quoteMonitor.updatePollingInterval(settings.pollingIntervalMs)
-  }
-
+function saveMonitorSettings(settings: DashboardMonitorSettings) {
+  saveMonitoringSettings(settings)
   monitorSettingsOpen.value = false
   showSavedToast(`监测设置已保存：每 ${settings.pollingIntervalMs / 1000} 秒轮询`)
 }
@@ -289,54 +203,6 @@ function openMarketIndexTrend(securityId: string) {
   })
 }
 
-async function refresh() {
-  if (refreshing.value) return
-  refreshing.value = true
-  contentLoading.value = true
-  try {
-    await Promise.allSettled([
-      quoteMonitor.forceRefresh(),
-      // 筹码数据是日线级低频数据；手动刷新时只更新当前表格里已经加载过的证券。
-      chipDistribution.refreshLoaded(visibleQuotes.value),
-      // 成交额按产品约定仅在页面进入与用户手动刷新时请求。
-      refreshMarketTurnover(),
-      fundFlowRanks.refresh()
-    ])
-  } finally {
-    refreshing.value = false
-    contentLoading.value = false
-  }
-}
-
-/**
- * 直连腾讯计算当前三市总成交额；仅在午盘/收盘采集窗口内申请服务端保存快照。
- * 实时展示失败不影响主行情表格的手动刷新。
- */
-async function refreshMarketTurnover() {
-  try {
-    const live = await fetchTencentMarketTurnover()
-    const phase = getClientMarketTurnoverPhase()
-    let reference: MarketTurnoverSnapshot | null = null
-
-    if (phase) {
-      const previous = await fetchMarketTurnoverSnapshots(getPreviousWeekdayTradeDate())
-      reference = previous.snapshots[phase] ?? null
-      // 服务端会复核窗口、交易日和封存状态；此处只避免不必要的请求。
-      await requestMarketTurnoverSnapshotUpdate(live.exchanges, live.sourceUpdatedAt)
-    }
-
-    marketTurnover.value = { total: sumMarketTurnover(live.exchanges), phase, reference }
-  } catch (error) {
-    console.warn('[ValueTicker] 获取市场成交额失败', error)
-  }
-}
-function toggleMonitor() {
-  paused.value = !paused.value
-  fundFlowRanks.setPaused(paused.value)
-  if (paused.value) quoteMonitor.pause()
-  else quoteMonitor.resume()
-}
-
 function showSavedToast(message = '操作已完成') {
   toastMessage.value = message
   savedToast.value = true
@@ -353,9 +219,7 @@ async function signOut() {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
 
-    quoteMonitor.stop()
-    fundFlowRanks.stop()
-    monitorStarted = false
+    stopMonitoring()
     userConfigStore.reset()
     marketStore.reset()
     selectedGroupId.value = 'all'
@@ -389,250 +253,6 @@ async function saveAlertRules(rules: AlertRule[]) {
   } catch (error) {
     console.error('[ValueTicker] 保存提醒规则失败', error)
     showSavedToast(userConfigStore.errorMessage || '提醒规则保存失败')
-  }
-}
-
-function openGroupForm() {
-  groupFormMode.value = 'create'
-  activeGroup.value = null
-  groupFormOpen.value = true
-}
-
-function exportGroups() {
-  const payload: StockGroupsExportFile = {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    groups: userConfigStore.stockGroups.map(group => ({
-      name: group.name,
-      isDefault: group.isDefault,
-      members: group.members.map(({ addedAt: _addedAt, ...member }) => member)
-    }))
-  }
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `value-ticker-groups-${formatExportDate(new Date())}.json`
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(link.href)
-  showSavedToast(`已导出 ${payload.groups.length} 个分组`)
-}
-
-async function prepareGroupImport(file: File) {
-  try {
-    const parsed = stockGroupsExportFileSchema.safeParse(JSON.parse(await file.text()))
-    if (!parsed.success) {
-      showSavedToast(parsed.error.issues[0]?.message ?? '导入文件格式不合法')
-      return
-    }
-    importedGroupsFile.value = parsed.data
-    importGroupsConfirmOpen.value = true
-  } catch {
-    showSavedToast('无法读取 JSON 导入文件')
-  }
-}
-
-function closeGroupImportConfirm() {
-  if (userConfigStore.saving) return
-  importGroupsConfirmOpen.value = false
-  importedGroupsFile.value = null
-}
-
-async function importGroups() {
-  const payload = importedGroupsFile.value
-  if (!payload) return
-  try {
-    await userConfigStore.replaceGroups(payload)
-    selectedGroupId.value = 'all'
-    closeGroupImportConfirm()
-    showSavedToast(`已导入 ${payload.groups.length} 个分组`)
-  } catch (error) {
-    console.error('[ValueTicker] 导入分组失败', error)
-    showSavedToast(userConfigStore.errorMessage || '导入分组失败')
-  }
-}
-
-function formatExportDate(value: Date) {
-  const pad = (part: number) => String(part).padStart(2, '0')
-  return `${value.getFullYear()}${pad(value.getMonth() + 1)}${pad(value.getDate())}`
-}
-
-function formatImportedAt(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
-}
-
-function closeGroupForm() {
-  groupFormOpen.value = false
-}
-
-function openRenameGroupForm(group: WatchGroup) {
-  groupFormMode.value = 'rename'
-  activeGroup.value = group
-  groupFormOpen.value = true
-}
-
-function openDeleteGroupConfirm(group: WatchGroup) {
-  activeGroup.value = group
-  deleteConfirmOpen.value = true
-}
-
-function closeDeleteGroupConfirm() {
-  deleteConfirmOpen.value = false
-}
-
-function openRemoveSecurityConfirm(quote: SecurityQuote) {
-  activeSecurity.value = quote
-  removeSecurityConfirmOpen.value = true
-}
-
-function closeRemoveSecurityConfirm() {
-  removeSecurityConfirmOpen.value = false
-  activeSecurity.value = null
-}
-
-function openTransferDialog(mode: 'MOVE' | 'COPY', quote: SecurityQuote) {
-  activeSecurity.value = quote
-  transferMode.value = mode
-  transferDialogOpen.value = true
-}
-
-function closeTransferDialog() {
-  transferDialogOpen.value = false
-  activeSecurity.value = null
-}
-
-const transferGroups = computed(() => groups.value.filter(group => group.id !== 'all' && group.id !== selectedGroupId.value))
-
-async function transferSecurity(targetGroupId: string) {
-  if (!activeSecurity.value || selectedGroupId.value === 'all') return
-  try {
-    await userConfigStore.transferMember(selectedGroupId.value, activeSecurity.value.securityId, targetGroupId, transferMode.value)
-    closeTransferDialog()
-    showSavedToast(transferMode.value === 'MOVE' ? '证券已移动' : '证券已复制')
-  } catch (error) {
-    console.error('[ValueTicker] 转移证券失败', error)
-    showSavedToast(userConfigStore.errorMessage || '证券转移失败')
-  }
-}
-
-function openAddSecurity() {
-  addSecurityOpen.value = true
-}
-
-async function addSecurity(security: SecurityItem) {
-  try {
-    if (!addTargetGroup.value) throw new Error('暂无可用分组')
-    await userConfigStore.addMember(addTargetGroup.value.id, security)
-    addSecurityOpen.value = false
-    showSavedToast('证券已添加')
-  } catch (error) {
-    console.error('[ValueTicker] 添加证券失败', error)
-    showSavedToast(userConfigStore.errorMessage || '证券添加失败')
-  }
-}
-
-async function submitGroupForm(name: string) {
-  if (groupFormMode.value === 'rename') {
-    await renameGroup(name)
-    return
-  }
-
-  await createGroup(name)
-}
-
-async function createGroup(name: string) {
-  try {
-    const group = await userConfigStore.createGroup(name)
-    selectedGroupId.value = group.id
-    closeGroupForm()
-    showSavedToast('分组已保存')
-  } catch (error) {
-    console.error('[ValueTicker] 创建分组失败', error)
-    showSavedToast(userConfigStore.errorMessage || '分组保存失败')
-  }
-}
-
-async function renameGroup(name: string) {
-  if (!activeGroup.value) return
-
-  try {
-    const group = await userConfigStore.renameGroup(activeGroup.value.id, name)
-    selectedGroupId.value = group.id
-    closeGroupForm()
-    showSavedToast('分组名称已更新')
-  } catch (error) {
-    console.error('[ValueTicker] 重命名分组失败', error)
-    showSavedToast(userConfigStore.errorMessage || '分组重命名失败')
-  }
-}
-
-async function deleteGroup() {
-  if (!activeGroup.value) return
-
-  const groupId = activeGroup.value.id
-
-  try {
-    await userConfigStore.deleteGroup(groupId)
-
-    if (selectedGroupId.value === groupId) {
-      selectedGroupId.value = 'all'
-    }
-
-    closeDeleteGroupConfirm()
-    activeGroup.value = null
-    showSavedToast('分组已删除')
-  } catch (error) {
-    console.error('[ValueTicker] 删除分组失败', error)
-    showSavedToast(userConfigStore.errorMessage || '分组删除失败')
-  }
-}
-
-async function removeSecurity() {
-  if (!activeSecurity.value || selectedGroupId.value === 'all' || removingSecurity.value) return
-
-  const groupId = selectedGroupId.value
-  const securityId = activeSecurity.value.securityId
-  removingSecurity.value = true
-  closeRemoveSecurityConfirm()
-
-  try {
-    await userConfigStore.deleteMember(groupId, securityId)
-    // 以持久化结果为准，确保当前分组列表与其他页面修改保持同步。
-    await userConfigStore.loadConfig()
-    const stillInAnyGroup = userConfigStore.stockGroups.some(group =>
-      group.members.some(member => member.securityId === securityId)
-    )
-    // 仅在最后一个分组成员关系被删除后清理公共筹码缓存，避免影响其他分组继续使用。
-    if (!stillInAnyGroup) await chipDistribution.removeCache(securityId)
-    showSavedToast('证券已从当前分组移除')
-  } catch (error) {
-    console.error('[ValueTicker] 移除证券失败', error)
-    showSavedToast(userConfigStore.errorMessage || '证券移除失败')
-  } finally {
-    removingSecurity.value = false
-  }
-}
-
-function createPendingQuote(member: SecurityItem, groupIds: string[], alertCount: number): SecurityQuote {
-  return {
-    securityId: member.securityId,
-    name: member.name,
-    code: member.code,
-    boardLabel: member.boardLabel || undefined,
-    securityType: member.securityType === 'ETF' ? 'ETF' : 'STOCK',
-    price: Number.NaN,
-    change: Number.NaN,
-    changePercent: Number.NaN,
-    open: Number.NaN,
-    high: Number.NaN,
-    low: Number.NaN,
-    previousClose: Number.NaN,
-    updatedAt: '待更新',
-    status: 'STALE',
-    alertCount,
-    groupIds
   }
 }
 </script>
