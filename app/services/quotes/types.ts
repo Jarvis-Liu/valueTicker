@@ -63,7 +63,7 @@ export type QuoteWorkerRequest
     | { type: 'STOP' }
     | { type: 'PAUSE' }
     | { type: 'RESUME' }
-    | { type: 'FORCE_REFRESH' }
+    | { type: 'FORCE_REFRESH', requestId: string }
     | { type: 'REFRESH_SECURITIES', securities: SecurityItem[] }
     | { type: 'UPDATE_TREND_SECURITIES', securities: SecurityItem[] }
     | { type: 'UPDATE_WINDOW_ACTIVITY', active: boolean }
@@ -78,4 +78,5 @@ export type QuoteWorkerResponse
     | { type: 'ALERT_TRIGGERED', event: QuoteAlertEvent }
     | { type: 'STATUS', status: MonitorStatus, message?: string }
     | { type: 'METRICS', providerLatencyMs: number | null }
+    | { type: 'REFRESH_COMPLETED', requestId: string }
     | { type: 'ERROR', message: string }

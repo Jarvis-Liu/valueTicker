@@ -20,7 +20,14 @@ export const useMarketStore = defineStore('market', () => {
     }
 
     for (const quote of nextQuotes) quotes.value[quote.securityId] = quote
-    lastUpdatedAt.value = nextQuotes.at(-1)?.updatedAt ?? lastUpdatedAt.value
+    const latestBatchUpdatedAt = nextQuotes
+      .map(quote => quote.updatedAt)
+      .filter(Boolean)
+      .sort()
+      .at(-1)
+    if (latestBatchUpdatedAt && (!lastUpdatedAt.value || latestBatchUpdatedAt > lastUpdatedAt.value)) {
+      lastUpdatedAt.value = latestBatchUpdatedAt
+    }
   }
 
   function updateTrends(nextTrends: SecurityIntradayTrend[], requestedSecurityIds?: string[]) {

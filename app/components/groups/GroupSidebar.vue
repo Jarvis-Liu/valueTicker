@@ -24,19 +24,20 @@ import type { WatchGroup } from '~/types/market'
 const props = defineProps<{
   groups: WatchGroup[]
   selectedId: string
-  collapsed: boolean
 }>()
 
+// 使用组件 v-model 作为唯一折叠状态源，避免 props 与手工 update 事件在初始化时短暂分离。
+const collapsed = defineModel<boolean>('collapsed', { required: true })
+
 const emit = defineEmits<{
-  'select': [id: string]
-  'add': []
-  'rename': [group: WatchGroup]
-  'delete': [group: WatchGroup]
-  'settings': []
-  'reorder': [groupIds: string[]]
-  'export': []
-  'import': [file: File]
-  'update:collapsed': [collapsed: boolean]
+  select: [id: string]
+  add: []
+  rename: [group: WatchGroup]
+  delete: [group: WatchGroup]
+  settings: []
+  reorder: [groupIds: string[]]
+  export: []
+  import: [file: File]
 }>()
 
 const persistedGroupCount = computed(() => props.groups.filter(group => group.id !== 'all').length)
@@ -78,7 +79,7 @@ function groupInitial(name: string) {
 }
 
 function showGroupTooltip(group: WatchGroup, event: MouseEvent | FocusEvent) {
-  if (!props.collapsed) return
+  if (!collapsed.value) return
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   groupTooltip.value = {
     name: group.name,
@@ -94,7 +95,7 @@ function hideGroupTooltip() {
 
 function toggleCollapsed() {
   hideGroupTooltip()
-  emit('update:collapsed', !props.collapsed)
+  collapsed.value = !collapsed.value
 }
 </script>
 

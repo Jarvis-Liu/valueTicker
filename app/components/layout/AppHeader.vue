@@ -31,7 +31,6 @@ const emit = defineEmits<{
   settings: []
   notifications: []
   signOut: []
-  logoClick: []
   providerChange: [provider: QuoteProviderMode]
 }>()
 
@@ -57,13 +56,7 @@ function changeProvider(provider: QuoteProviderMode) {
   <header class="border-b border-white/10 bg-[#0b2420] text-white">
     <div class="mx-auto flex h-[72px] max-w-[1680px] items-center gap-4 px-4 sm:px-6">
       <div
-        class="flex min-w-0 cursor-pointer items-center gap-3 rounded-xl outline-none transition focus-visible:ring-2 focus-visible:ring-emerald-300/50 lg:w-[224px]"
-        role="button"
-        tabindex="0"
-        aria-label="运行行情代理测试"
-        @click="emit('logoClick')"
-        @keydown.enter="emit('logoClick')"
-        @keydown.space.prevent="emit('logoClick')"
+        class="flex min-w-0 items-center gap-3 lg:w-[224px]"
       >
         <div class="relative grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-400 text-[#08211d] shadow-lg shadow-emerald-950/20">
           <IconActivityHeartbeat

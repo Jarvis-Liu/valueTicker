@@ -1,10 +1,14 @@
 import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
 import type { QuoteProviderMode, QuoteWorkerRequest, QuoteWorkerResponse } from '~/services/quotes/types'
 
+const FORCE_REFRESH_TIMEOUT_MS = 30_000
+
 export function useQuoteMonitor() {
   const marketStore = useMarketStore()
   const browserNotifications = useBrowserNotifications()
   const worker = shallowRef<Worker | null>(null)
+  const pendingRefreshes = new Map<string, PendingRefresh>()
+  let refreshSequence = 0
 
   function ensureWorker() {
     if (!worker.value) {
@@ -19,14 +23,17 @@ export function useQuoteMonitor() {
         }
         if (message.type === 'STATUS') marketStore.setStatus(message.status, message.message)
         if (message.type === 'METRICS') marketStore.setProviderLatency(message.providerLatencyMs)
+        if (message.type === 'REFRESH_COMPLETED') settleRefresh(message.requestId)
         if (message.type === 'ERROR') marketStore.setStatus('ERROR', message.message)
       }
       worker.value.onerror = (event) => {
         console.error('[ValueTicker] quote worker error', event)
         marketStore.setStatus('ERROR', event.message || '行情 Worker 启动失败')
+        rejectPendingRefreshes(new Error(event.message || '行情 Worker 启动失败'))
       }
       worker.value.onmessageerror = () => {
         marketStore.setStatus('ERROR', '行情 Worker 消息通信失败')
+        rejectPendingRefreshes(new Error('行情 Worker 消息通信失败'))
       }
     }
     return worker.value
@@ -36,9 +43,11 @@ export function useQuoteMonitor() {
     const payload = toWorkerPayload(message)
     try {
       ensureWorker().postMessage(payload)
+      return true
     } catch (error) {
       console.error('[ValueTicker] quote worker postMessage failed', error)
       marketStore.setStatus('ERROR', error instanceof Error ? error.message : '行情 Worker 消息发送失败')
+      return false
     }
   }
 
@@ -64,7 +73,18 @@ export function useQuoteMonitor() {
     send({ type: 'RESUME' })
   }
   function forceRefresh() {
-    send({ type: 'FORCE_REFRESH' })
+    const requestId = `${Date.now()}-${++refreshSequence}`
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingRefreshes.delete(requestId)
+        marketStore.setStatus('ERROR', '手动刷新超时')
+        reject(new Error('手动刷新超时'))
+      }, FORCE_REFRESH_TIMEOUT_MS)
+      pendingRefreshes.set(requestId, { resolve, reject, timer })
+      if (!send({ type: 'FORCE_REFRESH', requestId })) {
+        settleRefresh(requestId, new Error('行情 Worker 消息发送失败'))
+      }
+    })
   }
   function refreshSecurities(securities: SecurityItem[]) {
     send({ type: 'REFRESH_SECURITIES', securities })
@@ -76,6 +96,7 @@ export function useQuoteMonitor() {
     send({ type: 'UPDATE_WINDOW_ACTIVITY', active })
   }
   function stop() {
+    rejectPendingRefreshes(new Error('行情监测已停止'))
     if (!worker.value) return
     worker.value.postMessage({ type: 'STOP' } satisfies QuoteWorkerRequest)
     worker.value.terminate()
@@ -83,6 +104,25 @@ export function useQuoteMonitor() {
   }
 
   return { start, updateSecurities, updateAlerts, updateProviderMode, updatePollingInterval, pause, resume, forceRefresh, refreshSecurities, updateTrendSecurities, updateWindowActivity, stop }
+
+  function settleRefresh(requestId: string, error?: Error) {
+    const pending = pendingRefreshes.get(requestId)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    pendingRefreshes.delete(requestId)
+    if (error) pending.reject(error)
+    else pending.resolve()
+  }
+
+  function rejectPendingRefreshes(error: Error) {
+    for (const requestId of pendingRefreshes.keys()) settleRefresh(requestId, error)
+  }
+}
+
+interface PendingRefresh {
+  resolve: () => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
 }
 
 function toWorkerPayload(message: QuoteWorkerRequest): QuoteWorkerRequest {
