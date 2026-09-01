@@ -22,6 +22,7 @@ import {
   IconX
 } from '@tabler/icons-vue'
 import type { SecurityQuote } from '~/types/market'
+import { convertAlertTarget, type AlertTargetConversion } from '~/utils/alert-target-conversion'
 import type { AlertRule, AlertRuleType } from '~~/shared/types/stock'
 
 const props = defineProps<{
@@ -55,6 +56,9 @@ const ruleOptions: Array<{ id: AlertRuleType, name: string, hint: string, unit: 
 
 const enabledRuleCount = computed(() => localRules.value.filter(rule => rule.enabled).length)
 const pricePrecision = computed<2 | 3>(() => props.quote?.securityType === 'ETF' ? 3 : 2)
+const targetConversions = computed(() => localRules.value.map(rule =>
+  convertAlertTarget(rule.type, Number(rule.value), Number(props.quote?.previousClose))
+))
 /**
  * 按 2026-07-06 起施行的交易规则估算股票涨跌停价：主板 10%、创/科 20%、北交所 30%。
  * ETF 的限制比例取决于跟踪标的，当前证券模型无法准确识别，因此不做推算。
@@ -202,6 +206,13 @@ function cloneRules(rules: AlertRule[]) {
 
 function getRuleOption(type: AlertRuleType) {
   return ruleOptions.find(option => option.id === type) ?? ruleOptions[0]!
+}
+
+/** 将目标值换算方向映射为系统表单使用的语义色。 */
+function getTargetConversionClass(conversion: AlertTargetConversion) {
+  if (conversion.direction === 'POSITIVE') return 'text-rose-600'
+  if (conversion.direction === 'NEGATIVE') return 'text-emerald-600'
+  return 'text-slate-400'
 }
 </script>
 
@@ -490,7 +501,7 @@ function getRuleOption(type: AlertRuleType) {
                             </Listbox>
                           </label>
 
-                          <label>
+                          <label class="relative pb-5">
                             <span class="text-xs font-semibold text-slate-700">目标值</span>
                             <div class="relative mt-2">
                               <input
@@ -499,9 +510,16 @@ function getRuleOption(type: AlertRuleType) {
                                 min="0"
                                 step="0.01"
                                 class="h-10 w-full rounded-xl border border-slate-200 px-3 pr-11 text-sm font-semibold text-slate-900 tabular-number focus:border-emerald-400 focus:outline-none"
+                                :aria-describedby="targetConversions[index] ? `alert-target-conversion-${index}` : undefined"
                               >
                               <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{{ getRuleOption(rule.type).unit }}</span>
                             </div>
+                            <span
+                              v-if="targetConversions[index]"
+                              :id="`alert-target-conversion-${index}`"
+                              class="absolute bottom-0 right-0 whitespace-nowrap text-[10px] font-semibold leading-4 tabular-number"
+                              :class="getTargetConversionClass(targetConversions[index])"
+                            >{{ targetConversions[index].text }}</span>
                           </label>
                         </div>
 
