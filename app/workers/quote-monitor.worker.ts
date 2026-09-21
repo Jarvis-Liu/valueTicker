@@ -6,12 +6,14 @@ import { resolveQuoteProvider } from '../services/quotes/provider-routing'
 import { evaluateQuoteAlerts } from '../utils/alert-engine'
 import { getMarketSessionState, getNextAutomaticRefreshAt, isContinuousAuction } from '../utils/market-calendar'
 import { shouldRefreshTrendAfterActivation } from '../utils/trend-refresh-policy'
-import type { QuoteProviderMode, QuoteWorkerRequest, QuoteWorkerResponse, SecurityIntradayTrend } from '../services/quotes/types'
+import type { NormalizedQuote, QuoteProviderMode, QuoteWorkerRequest, QuoteWorkerResponse, SecurityIntradayTrend } from '../services/quotes/types'
 import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
 
 let securities: SecurityItem[] = []
 let trendSecurities: SecurityItem[] = []
 let alertConfigs: Record<string, SecurityAlerts> = {}
+const previousQuotes = new Map<string, NormalizedQuote>()
+const alertBaselinePending = new Set<string>()
 let quoteTimer: ReturnType<typeof setTimeout> | undefined
 let trendTimer: ReturnType<typeof setTimeout> | undefined
 let running = false
@@ -37,6 +39,8 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
     if (message.type === 'START') pollingIntervalMs = normalizePollingInterval(message.pollingIntervalMs)
     suppressNextAlerts = true
     if (message.type === 'START') {
+      previousQuotes.clear()
+      alertBaselinePending.clear()
       running = true
       paused = false
     }
@@ -63,6 +67,12 @@ self.onmessage = async (event: MessageEvent<QuoteWorkerRequest>) => {
   }
 
   if (message.type === 'UPDATE_ALERTS') {
+    const securityIds = new Set([...Object.keys(alertConfigs), ...Object.keys(message.alerts)])
+    for (const securityId of securityIds) {
+      if (alertRulesFingerprint(alertConfigs[securityId]) !== alertRulesFingerprint(message.alerts[securityId])) {
+        alertBaselinePending.add(securityId)
+      }
+    }
     alertConfigs = message.alerts
     return
   }
@@ -157,9 +167,17 @@ async function refreshQuotes(nextSecurities = securities) {
     } else {
       const securitiesById = new Map(nextSecurities.map(security => [security.securityId, security]))
       for (const quote of quotes) {
-        const events = evaluateQuoteAlerts(quote, securitiesById.get(quote.securityId), alertConfigs[quote.securityId])
+        // 新增、启用或修改规则后的第一批行情只为该证券建立基准，不影响其他证券正常提醒。
+        if (alertBaselinePending.has(quote.securityId)) continue
+        const events = evaluateQuoteAlerts(quote, previousQuotes.get(quote.securityId), securitiesById.get(quote.securityId), alertConfigs[quote.securityId])
         for (const alertEvent of events) post({ type: 'ALERT_TRIGGERED', event: alertEvent })
       }
+    }
+
+    // 无论本批次是否允许提醒，都要保存为下一次阈值穿越判断的基准。
+    for (const quote of quotes) {
+      previousQuotes.set(quote.securityId, quote)
+      alertBaselinePending.delete(quote.securityId)
     }
 
     post({ type: 'STATUS', status: quotes.length ? currentMonitorStatus() : 'STALE' })
@@ -314,6 +332,13 @@ function clearTrendTimer() {
 function normalizePollingInterval(value?: number) {
   if (!Number.isFinite(value)) return 5000
   return Math.max(5000, Math.floor(value as number))
+}
+
+function alertRulesFingerprint(alerts: SecurityAlerts | undefined) {
+  const rules = (alerts?.rules ?? [])
+    .map(rule => `${rule.type}:${rule.enabled ? 1 : 0}:${rule.value}`)
+    .sort()
+  return JSON.stringify(rules)
 }
 
 function post(message: QuoteWorkerResponse) {
