@@ -51,7 +51,7 @@ const ruleOptions: Array<{ id: AlertRuleType, name: string, hint: string, unit: 
   { id: 'PRICE_UPPER', name: '价格涨至', hint: '当前价大于等于目标价时提醒', unit: '元' },
   { id: 'PRICE_LOWER', name: '价格跌至', hint: '当前价小于等于目标价时提醒', unit: '元' },
   { id: 'CHANGE_UPPER', name: '涨幅超过', hint: '涨跌幅大于等于目标百分比时提醒', unit: '%' },
-  { id: 'CHANGE_LOWER', name: '跌幅超过', hint: '涨跌幅向下达到负的目标百分比时提醒，例如 1% 对应 -1%', unit: '%' }
+  { id: 'CHANGE_LOWER', name: '跌幅超过', hint: '涨跌幅小于等于负的目标百分比时提醒，例如 1% 对应 -1%', unit: '%' }
 ]
 
 const enabledRuleCount = computed(() => localRules.value.filter(rule => rule.enabled).length)
@@ -564,7 +564,7 @@ function getTargetConversionClass(conversion: AlertTargetConversion) {
                         class="mt-0.5 shrink-0"
                       />
                       <p class="text-[11px] leading-4">
-                        判定规则：价格涨至为当前价向上穿越目标价，价格跌至为当前价向下穿越目标价；涨幅超过为涨跌幅向上穿越目标百分比，跌幅超过为涨跌幅向下穿越对应负值（例如输入 1% 代表 -1%）。
+                        判定规则：价格涨至为当前价 ≥ 目标价，价格跌至为当前价 ≤ 目标价；涨幅超过为涨跌幅 ≥ 目标百分比，跌幅超过为涨跌幅 ≤ 对应负值（例如输入 1% 代表 -1%）。条件持续满足时，每轮有效行情都可以触发提醒。
                       </p>
                     </div>
                   </div>

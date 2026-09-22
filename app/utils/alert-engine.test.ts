@@ -47,40 +47,37 @@ function alerts(rule: AlertRule): SecurityAlerts {
   }
 }
 
-function events(type: AlertRule['type'], value: number, previous: NormalizedQuote | undefined, current: NormalizedQuote) {
-  return evaluateQuoteAlerts(current, previous, security, alerts({ type, value, enabled: true, note: '' }))
+function events(type: AlertRule['type'], value: number, current: NormalizedQuote) {
+  return evaluateQuoteAlerts(current, security, alerts({ type, value, enabled: true, note: '' }))
 }
 
-describe('alert engine threshold crossing', () => {
+describe('alert engine threshold matching', () => {
   it('does not trigger a decline alert while the quote is rising', () => {
-    expect(events('CHANGE_LOWER', 1, quote(10.01, 0.1), quote(10.02, 0.2))).toHaveLength(0)
+    expect(events('CHANGE_LOWER', 1, quote(10.02, 0.2))).toHaveLength(0)
   })
 
-  it('triggers a decline alert only when crossing the negative threshold', () => {
-    expect(events('CHANGE_LOWER', 1, quote(9.95, -0.5), quote(9.9, -1))).toHaveLength(1)
-    expect(events('CHANGE_LOWER', 1, quote(9.9, -1), quote(9.8, -2))).toHaveLength(0)
+  it('matches a decline against the negative target value', () => {
+    expect(events('CHANGE_LOWER', 1, quote(9.9, -1))).toHaveLength(1)
+    expect(events('CHANGE_LOWER', 1, quote(9.8, -2))).toHaveLength(1)
+    expect(events('CHANGE_LOWER', 1, quote(9.95, -0.5))).toHaveLength(0)
   })
 
-  it('triggers a gain alert only on an upward crossing', () => {
-    expect(events('CHANGE_UPPER', 1, quote(10.05, 0.5), quote(10.1, 1))).toHaveLength(1)
-    expect(events('CHANGE_UPPER', 1, quote(10.1, 1), quote(10.2, 2))).toHaveLength(0)
+  it('allows a matching gain to trigger on every evaluation', () => {
+    expect(events('CHANGE_UPPER', 1, quote(10.1, 1))).toHaveLength(1)
+    expect(events('CHANGE_UPPER', 1, quote(10.2, 2))).toHaveLength(1)
   })
 
-  it('applies the same crossing semantics to upper and lower price rules', () => {
-    expect(events('PRICE_UPPER', 11, quote(10.9, 9), quote(11, 10))).toHaveLength(1)
-    expect(events('PRICE_LOWER', 9, quote(9.1, -9), quote(9, -10))).toHaveLength(1)
-    expect(events('PRICE_LOWER', 9, quote(9, -10), quote(8.9, -11))).toHaveLength(0)
-  })
-
-  it('uses the first quote as a baseline without triggering', () => {
-    expect(events('CHANGE_LOWER', 1, undefined, quote(9.8, -2))).toHaveLength(0)
+  it('applies continuous matching to upper and lower price rules', () => {
+    expect(events('PRICE_UPPER', 11, quote(11, 10))).toHaveLength(1)
+    expect(events('PRICE_UPPER', 11, quote(11.1, 11))).toHaveLength(1)
+    expect(events('PRICE_LOWER', 9, quote(9, -10))).toHaveLength(1)
+    expect(events('PRICE_LOWER', 9, quote(8.9, -11))).toHaveLength(1)
   })
 
   it('ignores disabled and invalid rules', () => {
     const current = quote(9.8, -2)
-    const previous = quote(9.95, -0.5)
     const disabled = alerts({ type: 'CHANGE_LOWER', value: 1, enabled: false, note: '' })
-    expect(evaluateQuoteAlerts(current, previous, security, disabled)).toHaveLength(0)
-    expect(events('CHANGE_LOWER', 0, previous, current)).toHaveLength(0)
+    expect(evaluateQuoteAlerts(current, security, disabled)).toHaveLength(0)
+    expect(events('CHANGE_LOWER', 0, current)).toHaveLength(0)
   })
 })
