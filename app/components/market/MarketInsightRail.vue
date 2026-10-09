@@ -4,13 +4,16 @@ import {
   IconTrendingUp,
   IconBellRinging,
   IconChartLine,
-  IconClockHour4
+  IconClockHour4,
+  IconHistory
 } from '@tabler/icons-vue'
 import { MARKET_INDEX_SECURITIES } from '~/utils/market-indices'
 import IntradayTrendSparkline from '~/components/quotes/IntradayTrendSparkline.vue'
+import AppTooltip from '~/components/common/AppTooltip.vue'
 import type { NormalizedQuote, SecurityIntradayTrend } from '~/services/quotes/types'
 import type { AlertNotification, SecurityQuote } from '~/types/market'
 import { getMarketTurnoverComparisonHint, type MarketTurnoverDisplay } from '~/utils/market-turnover'
+import { getHistoricalMarketTrendHint, isHistoricalMarketTrend } from '~/utils/market-trend-freshness'
 
 const props = defineProps<{
   notifications: AlertNotification[]
@@ -31,13 +34,17 @@ const indices = computed(() => {
   const quotesById = new Map(props.indexQuotes.map(quote => [quote.securityId, quote]))
   return MARKET_INDEX_SECURITIES.map((security) => {
     const quote = quotesById.get(security.securityId)
+    const trend = props.indexTrends[security.securityId]
+    const historical = isHistoricalMarketTrend(security.securityId, trend?.tradeDate)
     return {
       securityId: security.securityId,
       name: security.name,
       value: formatIndexValue(quote?.price),
       change: formatSignedPercent(quote?.changePercent),
       up: Number.isFinite(quote?.changePercent) ? quote!.changePercent >= 0 : null,
-      updatedAt: quote?.updatedAt ?? '待更新'
+      updatedAt: quote?.updatedAt ?? '待更新',
+      historical,
+      historicalHint: historical && trend?.tradeDate ? getHistoricalMarketTrendHint(trend.tradeDate) : ''
     }
   })
 })
@@ -149,8 +156,22 @@ function formatSignedTurnover(value: number) {
           class="grid grid-cols-[minmax(0,1fr)_96px_auto] items-center gap-3 py-3.5"
         >
           <div>
-            <p class="text-xs text-slate-500">
-              {{ item.name }}
+            <p class="flex items-center gap-1 text-xs text-slate-500">
+              <span>{{ item.name }}</span>
+              <AppTooltip
+                v-if="item.historical"
+                aria-label="查看历史行情日期"
+                placement="left"
+              >
+                <template #trigger>
+                  <IconHistory
+                    :size="13"
+                    class="text-amber-500"
+                  />
+                </template>
+                <span class="block text-[11px] font-semibold text-slate-800">历史行情</span>
+                <span class="mt-1 block text-[10px] leading-4">{{ item.historicalHint }}</span>
+              </AppTooltip>
             </p>
             <p class="mt-1 text-sm font-semibold text-slate-900 tabular-number">
               {{ item.value }}

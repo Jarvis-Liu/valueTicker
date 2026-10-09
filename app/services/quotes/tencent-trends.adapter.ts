@@ -26,6 +26,7 @@ export async function fetchTencentIntradayTrend(security: SecurityItem): Promise
 
   return {
     securityId: security.securityId,
+    tradeDate: normalizeTencentTradeDate(date),
     previousClose: number(snapshot[4]),
     openingPrice: firstFinitePrice(points),
     points,
@@ -97,6 +98,11 @@ function formatTencentDateTime(value: string | undefined) {
   const matched = value?.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/)
   if (matched) return `${matched[1]}-${matched[2]}-${matched[3]} ${matched[4]}:${matched[5]}:${matched[6]}`
   return formatLocalDateTime(new Date())
+}
+
+function normalizeTencentTradeDate(value: string) {
+  const matched = value.match(/^(\d{4})(\d{2})(\d{2})$/)
+  return matched ? `${matched[1]}-${matched[2]}-${matched[3]}` : null
 }
 
 function number(value: number | string | undefined) {

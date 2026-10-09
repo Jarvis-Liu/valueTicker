@@ -36,6 +36,8 @@ export interface IntradayTrendPoint {
 
 export interface SecurityIntradayTrend {
   securityId: string
+  /** Provider 返回的曲线实际交易日期；用于区分当天分时与上一交易日历史曲线。 */
+  tradeDate: string | null
   previousClose: number
   openingPrice: number
   points: IntradayTrendPoint[]

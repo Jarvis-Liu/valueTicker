@@ -227,6 +227,7 @@ async function fetchIntradayTrends(nextSecurities: SecurityItem[]) {
       } catch {
         results.push({
           securityId: security.securityId,
+          tradeDate: null,
           previousClose: Number.NaN,
           openingPrice: Number.NaN,
           points: [],

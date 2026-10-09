@@ -23,11 +23,13 @@ export async function fetchEastmoneyIntradayTrend(security: SecurityItem): Promi
     if (payload.rc !== 0 || !payload.data) throw new Error(`东财分时接口返回错误码 ${payload.rc}`)
 
     const rawPoints = (payload.data.trends ?? []).map(parseTrendPoint).filter((point): point is IntradayTrendPoint => point !== null)
+    const tradeDate = extractTradeDate(rawPoints)
     const customTimeline = shouldUseProviderTimeline(security) ? createTimelineFromBeticks(payload.data.beticks) : null
     const points = normalizeIntradayTrendPoints(rawPoints, customTimeline ? { timeline: customTimeline, foldAfternoonOpen: false } : undefined)
 
     return {
       securityId: security.securityId,
+      tradeDate,
       previousClose: number(payload.data.preClose),
       openingPrice: firstFinitePrice(points),
       points,
@@ -65,6 +67,14 @@ function parseTrendPoint(value: string): IntradayTrendPoint | null {
 
 function firstFinitePrice(points: IntradayTrendPoint[]) {
   return points.find(point => Number.isFinite(point.price))?.price ?? Number.NaN
+}
+
+function extractTradeDate(points: IntradayTrendPoint[]) {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const matched = points[index]?.time.match(/^(\d{4}-\d{2}-\d{2})(?:\s|$)/)
+    if (matched?.[1]) return matched[1]
+  }
+  return null
 }
 
 function number(value: number | string | undefined) {
