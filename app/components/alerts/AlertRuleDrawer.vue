@@ -267,6 +267,9 @@ function getTargetConversionClass(conversion: AlertTargetConversion) {
                           >
                             {{ quote.name }} · {{ quote.code }}，已开启 {{ enabledRuleCount }} 条
                           </p>
+                          <p class="mt-1 text-[10px] text-slate-400">
+                            编辑期间系统通知暂缓，站内提醒正常记录
+                          </p>
                         </div>
                       </div>
                       <button

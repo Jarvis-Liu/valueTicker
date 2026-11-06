@@ -96,6 +96,7 @@ const {
   trendSecurities,
   rankStockCodes,
   activeAlerts,
+  systemNotificationsBlocked: alertOpen,
   visibleQuotes,
   refreshAdditionalData: quotes => [
     // 筹码数据是日线级低频数据；手动刷新时只更新当前表格里已经加载过的证券。

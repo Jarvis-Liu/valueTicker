@@ -22,6 +22,8 @@ interface DashboardMonitoringOptions {
   rankStockCodes: Readonly<Ref<string[]>>
   /** 当前用户全部证券提醒配置。 */
   activeAlerts: Readonly<Ref<Record<string, SecurityAlerts>>>
+  /** 提醒编辑期间阻止发送系统通知，行情和站内提醒继续运行。 */
+  systemNotificationsBlocked?: Readonly<Ref<boolean>>
   /** 当前主表格实际展示的行情行，供低频扩展数据刷新使用。 */
   visibleQuotes: Readonly<Ref<SecurityQuote[]>>
   /** 页面手动刷新时一并执行的低频任务，例如筹码和市场成交额。 */
@@ -46,7 +48,7 @@ export function useDashboardMonitoring(options: DashboardMonitoringOptions) {
   const marketStore = useMarketStore()
 
   /** 行情 Worker 控制器，承载实时行情、分时图和提醒计算。 */
-  const quoteMonitor = useQuoteMonitor()
+  const quoteMonitor = useQuoteMonitor(options.systemNotificationsBlocked)
 
   /** 全市场资金排名控制器，与行情监测共享前后台和暂停状态。 */
   const fundFlowRanks = useFundFlowRanks()

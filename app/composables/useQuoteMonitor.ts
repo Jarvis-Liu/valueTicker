@@ -1,9 +1,10 @@
 import type { SecurityAlerts, SecurityItem } from '~~/shared/types/stock'
 import type { QuoteProviderMode, QuoteWorkerRequest, QuoteWorkerResponse } from '~/services/quotes/types'
+import type { Ref } from 'vue'
 
 const FORCE_REFRESH_TIMEOUT_MS = 30_000
 
-export function useQuoteMonitor() {
+export function useQuoteMonitor(systemNotificationsBlocked?: Readonly<Ref<boolean>>) {
   const marketStore = useMarketStore()
   const browserNotifications = useBrowserNotifications()
   const worker = shallowRef<Worker | null>(null)
@@ -19,7 +20,8 @@ export function useQuoteMonitor() {
         if (message.type === 'TREND_SNAPSHOT') marketStore.updateTrends(message.trends, message.securityIds)
         if (message.type === 'ALERT_TRIGGERED') {
           marketStore.addAlertEvent(message.event)
-          browserNotifications.notifyAlert(message.event)
+          // 编辑提醒时仅阻止新系统通知，站内记录照常写入；阻止期间的通知不排队补发。
+          if (!systemNotificationsBlocked?.value) browserNotifications.notifyAlert(message.event)
         }
         if (message.type === 'STATUS') marketStore.setStatus(message.status, message.message)
         if (message.type === 'METRICS') marketStore.setProviderLatency(message.providerLatencyMs)
